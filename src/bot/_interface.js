@@ -110,24 +110,29 @@ class Module {
               return target[key]
             },
             set: (target, key, value) => {
-              if (_.isEqual(target[key], value)) return true
               // check if types match
-              if (typeof target[key] !== typeof value) {
-                const error = path + '.' + key + ' set failed\n\texpected:\t' + typeof target[key] + '\n\tset:     \t' + typeof value
-                // try retype if expected is number and we got string (from ui settings e.g.)
-                if (typeof target[key] === 'number') {
-                  value = Number(value)
-                  if (isNaN(value)) throw new Error(error)
-                } else throw new Error(error)
-              }
+              // skip when saving to undefined
+              if (typeof target[key] !== 'undefined') {
+                // if default value is null or new value is null -> skip checks
+                if (value !== null && target[key] !== null) {
+                  if (typeof target[key] !== typeof value) {
+                    const error = path + '.' + key + ' set failed\n\texpected:\t' + typeof target[key] + '\n\tset:     \t' + typeof value
+                    // try retype if expected is number and we got string (from ui settings e.g.)
+                    if (typeof target[key] === 'number') {
+                      value = Number(value)
+                      if (isNaN(value)) throw new Error(error)
+                    } else throw new Error(error)
+                  }
+                }
 
-              target[key] = value
-              this.updateSettings(`${path}.${key}`, value)
+                target[key] = value
+                this.updateSettings(`${path}.${key}`, value)
 
-              if (this.onChange[`${path}.${key}`] && cluster.isMaster) {
+                if (this.onChange[`${path}.${key}`] && cluster.isMaster) {
                 // run onChange functions only on master
-                for (let fnc of this.onChange[`${path}.${key}`]) {
-                  this[fnc](`${path}.${key}`, value)
+                  for (let fnc of this.onChange[`${path}.${key}`]) {
+                    this[fnc](`${path}.${key}`, value)
+                  }
                 }
               }
               return true
@@ -140,14 +145,14 @@ class Module {
       set: (target, key, value) => {
         if (_.isEqual(target[key], value)) return true
         // check if types match
-        if (typeof target[key] !== typeof value) throw new Error(key + ' set failed\n\texpected:\t' + typeof target[key] + '\n\tset:     \t' + typeof value)
-
-        target[key] = value
-        this.updateSettings(key, value)
-
-        if (this.onChange[key]) {
-          for (let fnc of this.onChange[key]) {
-            this[fnc](key, value)
+        if (typeof target[key] !== 'undefined') {
+          if (typeof target[key] !== typeof value) throw new Error(key + ' set failed\n\texpected:\t' + typeof target[key] + '\n\tset:     \t' + typeof value)
+          target[key] = value
+          this.updateSettings(key, value)
+          if (this.onChange[key]) {
+            for (let fnc of this.onChange[key]) {
+              this[fnc](key, value)
+            }
           }
         }
         return true
