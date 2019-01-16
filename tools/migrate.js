@@ -160,6 +160,22 @@ let updates = async (from, to) => {
 }
 
 let migration = {
+  polls: [{
+    version: '8.2.2',
+    do: async () => {
+      console.info('[Polls] Fix dates to timestamps')
+      let items = await global.db.engine.find('systems.polls')
+      let processed = 0
+      for (let item of items) {
+        item.openedAt = (new Date(item.openedAt)).getTime()
+        item.closedAt = (new Date(item.closedAt)).getTime()
+        const _id = String(item._id); delete item._id
+        await global.db.engine.update('systems.polls', { _id }, item)
+        processed++
+      }
+      console.info(` => ${processed} processed`)
+    }
+  }],
   compact: [{
     version: '8.2.1',
     do: async () => {
