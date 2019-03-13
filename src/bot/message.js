@@ -4,9 +4,9 @@ const safeEval = require('safe-eval')
 const decode = require('decode-html')
 const querystring = require('querystring')
 const _ = require('lodash')
-const cluster = require('cluster')
 const crypto = require('crypto')
 const constants = require('./constants')
+const gitCommitInfo = require('git-commit-info');
 
 const Entities = require('html-entities').AllHtmlEntities
 
@@ -28,7 +28,8 @@ class Message {
       this.message = this.message.replace(regexp, value)
     }
 
-    this.message = this.message.replace(/\$version/g, process.env.npm_package_version)
+    const version = _.get(process, 'env.npm_package_version', 'x.y.z')
+    this.message = this.message.replace(/\$version/g, version.replace('SNAPSHOT', gitCommitInfo().shortHash || 'SNAPSHOT'))
 
     let events = _.orderBy(await global.db.engine.find('widgetsEventList'), 'timestamp', 'desc')
     // latestFollower
@@ -80,47 +81,78 @@ class Message {
 
     let random = {
       '(random.online.viewer)': async function () {
-        const onlineViewers = _.filter(
-          (await global.db.engine.find('users.online')).map((o) => o.username),
-          (o) => o.username !== attr.sender && o.username !== global.oauth.settings.bot.username.toLowerCase())
+        const usernames = await global.users.getAllOnlineUsernames()
+        const onlineViewers = usernames.filter((username) => {
+          const isSender = username === attr.sender;
+          const isBot = global.commons.isBot(username);
+          const isIgnored = global.commons.isIgnored(username);
+          return !isSender && !isBot && !isIgnored;
+        })
         if (onlineViewers.length === 0) return 'unknown'
         return _.sample(onlineViewers)
       },
       '(random.online.follower)': async function () {
-        const onlineViewers = (await global.db.engine.find('users.online')).map((o) => o.username)
+        const usernames = await global.users.getAllOnlineUsernames()
+        const onlineViewers = usernames.filter((username) => {
+          const isSender = username === attr.sender;
+          const isBot = global.commons.isBot(username);
+          const isIgnored = global.commons.isIgnored(username);
+          return !isSender && !isBot && !isIgnored;
+        })
         const followers = _.filter(
           (await global.db.engine.find('users', { is: { follower: true } })).map((o) => o.username),
-          (o) => o.username !== attr.sender && o.username !== global.oauth.settings.bot.username.toLowerCase())
+          (o) => o !== attr.sender && o !== global.oauth.settings.bot.username.toLowerCase())
         let onlineFollowers = _.intersection(onlineViewers, followers)
         if (onlineFollowers.length === 0) return 'unknown'
         return _.sample(onlineFollowers)
       },
       '(random.online.subscriber)': async function () {
-        const onlineViewers = (await global.db.engine.find('users.online')).map((o) => o.username)
+        const usernames = await global.users.getAllOnlineUsernames()
+        const onlineViewers = usernames.filter((username) => {
+          const isSender = username === attr.sender;
+          const isBot = global.commons.isBot(username);
+          const isIgnored = global.commons.isIgnored(username);
+          return !isSender && !isBot && !isIgnored;
+        })
         const subscribers = _.filter(
           (await global.db.engine.find('users', { is: { subscriber: true } })).map((o) => o.username),
-          (o) => o.username !== attr.sender && o.username !== global.oauth.settings.bot.username.toLowerCase())
+          (o) => o !== attr.sender && o !== global.oauth.settings.bot.username.toLowerCase())
         let onlineSubscribers = _.intersection(onlineViewers, subscribers)
         if (onlineSubscribers.length === 0) return 'unknown'
         return _.sample(onlineSubscribers)
       },
       '(random.viewer)': async function () {
-        let viewer = await global.users.getAll()
-        viewer = _.filter(viewer, function (o) { return o.username !== attr.sender && o.username !== global.oauth.settings.bot.username.toLowerCase() })
+        let viewer = (await global.users.getAll()).map((o) => o.username)
+        viewer = viewer.filter((username) => {
+          const isSender = username === attr.sender;
+          const isBot = global.commons.isBot(username);
+          const isIgnored = global.commons.isIgnored(username);
+          return !isSender && !isBot && !isIgnored;
+        })
         if (viewer.length === 0) return 'unknown'
-        return _.sample(viewer).username
+        return _.sample(viewer)
       },
       '(random.follower)': async function () {
-        let follower = await global.users.getAll({ is: { follower: true } })
-        follower = _.filter(follower, function (o) { return o.username !== attr.sender && o.username !== global.oauth.settings.bot.username.toLowerCase() })
+        let follower = (await global.db.engine.find('users', { is: { follower: true } })).map((o) => o.username)
+        follower = follower.filter((username) => {
+          const isSender = username === attr.sender;
+          const isBot = global.commons.isBot(username);
+          const isIgnored = global.commons.isIgnored(username);
+          return !isSender && !isBot && !isIgnored;
+        })
         if (follower.length === 0) return 'unknown'
-        return _.sample(follower).username
+        return _.sample(follower)
       },
       '(random.subscriber)': async function () {
-        let subscriber = await global.users.getAll({ is: { subscriber: true } })
-        subscriber = _.filter(subscriber, function (o) { return o.username !== attr.sender && o.username !== global.oauth.settings.bot.username.toLowerCase() })
+        let subscriber = (await global.db.engine.find('users', { is: { subscriber: true } })).map((o) => o.username)
+        subscriber = subscriber.filter((username) => {
+          const isSender = username === attr.sender;
+          const isBot = global.commons.isBot(username);
+          const isIgnored = global.commons.isIgnored(username);
+          return !isSender && !isBot && !isIgnored;
+        })
         if (subscriber.length === 0) return 'unknown'
-        return _.sample(subscriber).username
+        return _.sample(subscriber)
       },
       '(random.number-#-to-#)': async function (filter) {
         let numbers = filter.replace('(random.number-', '')
@@ -149,21 +181,18 @@ class Message {
     }
     let custom = {
       '$_#': async (variable) => {
-        let isMod = await global.commons.isMod(attr.sender)
-        if ((global.commons.isOwner(attr.sender) || isMod) &&
-          (!_.isNil(attr.param) && attr.param.length !== 0)) {
+        if (!_.isNil(attr.param) && attr.param.length !== 0) {
           let state = await global.customvariables.setValueOf(variable, attr.param, { sender: attr.sender })
-
           if (state.updated.responseType === 0) {
             // default
             if (state.isOk && !state.isEval) {
-              let msg = await global.commons.prepare('filters.setVariable', { value: state.updated.currentValue, variable: variable })
+              let msg = await global.commons.prepare('filters.setVariable', { value: state.updated.setValue, variable: variable })
               global.commons.sendMessage(msg, { username: attr.sender, skip: true, quiet: _.get(attr, 'quiet', false) })
             }
-            return state.isEval ? state.updated.currentValue : ''
+            return state.updated.currentValue
           } else if (state.updated.responseType === 1) {
             // custom
-            global.commons.sendMessage(state.updated.responseText.replace('$value', state.updated.currentValue), { username: attr.sender, skip: true, quiet: _.get(attr, 'quiet', false) })
+            global.commons.sendMessage(state.updated.responseText.replace('$value', state.updated.setValue), { username: attr.sender, skip: true, quiet: _.get(attr, 'quiet', false) })
             return ''
           } else {
             // command
@@ -175,11 +204,9 @@ class Message {
       // force quiet variable set
       '$!_#': async (variable) => {
         variable = variable.replace('$!_', '$_')
-        let isMod = await global.commons.isMod(attr.sender)
-        if ((global.commons.isOwner(attr.sender) || isMod) &&
-          (!_.isNil(attr.param) && attr.param.length !== 0)) {
+        if (!_.isNil(attr.param) && attr.param.length !== 0) {
           let state = await global.customvariables.setValueOf(variable, attr.param, { sender: attr.sender })
-          return state.isEval ? state.updated.currentValue : ''
+          return state.updated.currentValue
         }
         return global.customvariables.getValueOf(variable, { sender: attr.sender, param: attr.param })
       }
@@ -225,20 +252,28 @@ class Message {
         let cmd = filter
           .replace('!', '') // replace first !
           .replace(/\(|\)/g, '')
-          .replace(/\$sender/g, (global.configuration.getValue('atUsername') ? '@' : '') + attr.sender)
+          .replace(/\$sender/g, (global.users.settings.users.showWithAt ? '@' : '') + attr.sender)
           .replace(/\$param/g, attr.param)
-        if (cluster.isMaster) _.sample(cluster.workers).send({ type: 'message', sender: { username: attr.sender }, message: cmd, skip: true, quiet: true }) // resend to random worker
-        else if (process.send) process.send({ type: 'parse', sender: { username: attr.sender }, message: cmd, skip: true, quiet: true })
+        global.tmi.message({
+          sender: { username: attr.sender },
+          message: cmd,
+          skip: true,
+          quiet: true
+        })
         return ''
       },
       '(!#)': async function (filter) {
         if (!_.isString(attr.sender)) attr.sender = _.get(attr, 'sender.username', null)
         let cmd = filter
           .replace(/\(|\)/g, '')
-          .replace(/\$sender/g, (global.configuration.getValue('atUsername') ? '@' : '') + attr.sender)
+          .replace(/\$sender/g, (global.users.settings.users.showWithAt ? '@' : '') + attr.sender)
           .replace(/\$param/g, attr.param)
-        if (cluster.isMaster) _.sample(cluster.workers).send({ type: 'message', sender: { username: attr.sender }, message: cmd, skip: true, quiet: false }) // resend to random worker
-        else if (process.send) process.send({ type: 'parse', sender: { username: attr.sender }, message: cmd, skip: true, quiet: false })
+        global.tmi.message({
+          sender: { username: attr.sender },
+          message: cmd,
+          skip: true,
+          quiet: false
+        })
         return ''
       }
     }
@@ -409,7 +444,7 @@ class Message {
           users: users,
           is: is,
           random: randomVar,
-          sender: await global.configuration.getValue('atUsername') ? `@${attr.sender}` : `${attr.sender}`,
+          sender: global.users.settings.users.showWithAt ? `@${attr.sender}` : `${attr.sender}`,
           param: _.isNil(attr.param) ? null : attr.param
         }
 
@@ -528,7 +563,7 @@ class Message {
     await this.parseMessageEach(param, true)
     // local replaces
     if (!_.isNil(attr)) {
-      const isWithAt = await global.configuration.getValue('atUsername')
+      const isWithAt = global.users.settings.users.showWithAt
       for (let [key, value] of Object.entries(attr)) {
         if (_.includes(['sender'], key)) value = isWithAt ? `@${value}` : value
         this.message = this.message.replace(new RegExp('[$]' + key, 'g'), value)
@@ -616,7 +651,7 @@ class Message {
       let rMessage = this.message.match((new RegExp('(' + regexp + ')', 'g')))
       if (!_.isNull(rMessage)) {
         for (var bkey in rMessage) {
-          if (!await fnc(rMessage[bkey])) this.message = ''
+          if (!(await fnc(rMessage[bkey]))) this.message = ''
           else {
             this.message = this.message.replace(rMessage[bkey], '').trim()
           }

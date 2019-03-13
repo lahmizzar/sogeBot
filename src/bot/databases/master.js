@@ -10,15 +10,6 @@ class IMasterController extends Interface {
 
     this.timeouts = {}
 
-    cluster.on('message', (worker, message) => {
-      if (message.type !== 'db') return
-      this.data.push({
-        id: message.id,
-        items: message.items,
-        timestamp: _.now()
-      })
-    })
-
     this.connected = false
     this.data = []
 
@@ -55,9 +46,7 @@ class IMasterController extends Interface {
     delete this.timeouts[`sendRequest-${id}`]
 
     try {
-      const worker = _.sample(cluster.workers)
-      if (!worker.isConnected()) throw new Error('Worker is not connected')
-      worker.send(data)
+      global.workers.sendToWorker(data)
       this.returnData(resolve, reject, id)
     } catch (e) {
       setTimeout(() => this.sendRequest(resolve, reject, id, data), 10)
@@ -76,18 +65,18 @@ class IMasterController extends Interface {
     } else setTimeout(() => this.returnData(resolve, reject, id), 10)
   }
 
-  async find (table, where) {
+  async find (table, where, lookup) {
     const id = crypto.randomBytes(64).toString('hex')
-    const data = { type: 'db', fnc: 'find', table: table, where: where, id: id }
+    const data = { type: 'db', fnc: 'find', table, where, id, lookup }
 
     return new Promise((resolve, reject) => {
       this.sendRequest(resolve, reject, id, data)
     })
   }
 
-  async findOne (table, where) {
+  async findOne (table, where, lookup) {
     const id = crypto.randomBytes(64).toString('hex')
-    const data = { type: 'db', fnc: 'findOne', table: table, where: where, id: id }
+    const data = { type: 'db', fnc: 'findOne', table, where, id, lookup }
 
     return new Promise((resolve, reject) => {
       this.sendRequest(resolve, reject, id, data)

@@ -2,7 +2,9 @@
 
 // 3rdparty libraries
 const _ = require('lodash')
-const cluster = require('cluster')
+const {
+  isMainThread
+} = require('worker_threads');
 // bot libraries
 var constants = require('../constants')
 import System from './_interface'
@@ -22,11 +24,9 @@ const TYPE_TICKETS = 1
  */
 
 class Raffles extends System {
+  lastAnnounce: number = _.now()
   constructor () {
     const settings = {
-      _: {
-        lastAnnounce: String(new Date())
-      },
       luck: {
         subscribersPercent: 150,
         followersPercent: 120
@@ -46,13 +46,8 @@ class Raffles extends System {
     super({ settings })
     this.addWidget('raffles', 'widget-title-raffles', 'fas fa-gift')
 
-    if (cluster.isMaster) {
+    if (isMainThread) {
       this.announce()
-
-      cluster.on('message', (worker, message) => {
-        if (message.type !== 'raffles') return
-        this[message.fnc](this)
-      })
     }
   }
 
@@ -98,7 +93,7 @@ class Raffles extends System {
   async announce () {
     clearTimeout(this.timeouts['raffleAnnounce'])
     let raffle = await global.db.engine.findOne(this.collection.data, { winner: null })
-    if (!await global.cache.isOnline() || _.isEmpty(raffle) || new Date().getTime() - new Date(await this.settings._.lastAnnounce).getTime() < ((await this.settings.raffleAnnounceInterval) * 60 * 1000)) {
+    if (!(await global.cache.isOnline()) || _.isEmpty(raffle) || new Date().getTime() - new Date(this.lastAnnounce).getTime() < (this.settings.raffleAnnounceInterval * 60 * 1000)) {
       this.timeouts['raffleAnnounce'] = setTimeout(() => this.announce(), 60000)
       return
     }
@@ -196,7 +191,7 @@ class Raffles extends System {
     })
     global.commons.sendMessage(message, global.commons.getOwner())
 
-    this.settings._.lastAnnounce = String(new Date())
+    this.lastAnnounce = _.now()
   }
 
   async main (opts) {

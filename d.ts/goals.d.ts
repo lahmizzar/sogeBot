@@ -20,6 +20,7 @@ declare namespace Goals {
 
   type BarOpts = {
     color: string,
+    backgroundColor: string,
     borderColor: string,
     borderPx: number,
     height: number
@@ -39,6 +40,7 @@ declare namespace Goals {
 
     name: string,
     type: 'followers' | 'currentFollowers' | 'currentSubscribers' | 'subscribers' | 'tips' | 'bits',
+    countBitsAsTips: boolean,
 
     display: 'simple' | 'full' | 'custom'
 
@@ -53,6 +55,7 @@ declare namespace Goals {
     timestamp: number,
     goalAmount: number,
     currentAmount: number,
+    endAfterIgnore: boolean,
     endAfter: string,
   }
 }

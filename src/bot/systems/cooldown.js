@@ -73,15 +73,25 @@ class Cooldown extends System {
       .toArray()
 
     if (!_.isNil(command)) { // command
-      let key
+      let key = subcommand ? `${command} ${subcommand}` : command
       const parsed = await (new Parser().find(subcommand ? `${command} ${subcommand}` : command))
-      if (!parsed) {
-        key = subcommand ? `${command} ${subcommand}` : command
-      } else key = parsed.command
+      if (parsed) {
+        key = parsed.command
+      } else {
+        // search in custom commands as well
+        if (global.systems.customCommands.isEnabled()) {
+          let commands = await global.db.engine.find(global.systems.customCommands.collection.data)
+          commands = _(commands).flatMap().sortBy(o => -o.command.length).value()
+          const customparsed = await (new Parser().find(subcommand ? `${command} ${subcommand}` : command, commands))
+          if (customparsed) {
+            key = customparsed.command
+          }
+        }
+      }
 
       let cooldown = await global.db.engine.findOne(this.collection.data, { key })
       if (_.isEmpty(cooldown)) { // command is not on cooldown -> recheck with text only
-        const replace = new RegExp(`${key}`, 'ig')
+        const replace = new RegExp(`${XRegExp.escape(key)}`, 'ig')
         opts.message = opts.message.replace(replace, '')
         if (opts.message.length > 0) return this.check(opts)
         else return true
@@ -130,8 +140,8 @@ class Cooldown extends System {
 
     const user = await global.users.getById(opts.sender.userId)
     let result = false
-    const isMod = opts.sender.isModerator
-    const isSubscriber = opts.sender.isSubscriber
+    const isMod = typeof opts.sender.badges.moderator !== 'undefined'
+    const isSubscriber = typeof opts.sender.badges.subscriber !== 'undefined'
     const isFollower = user.is && user.is.follower ? user.is.follower : false
 
     for (let cooldown of data) {
@@ -157,7 +167,7 @@ class Cooldown extends System {
         result = true
         continue
       } else {
-        if (!cooldown.quiet && !(await this.settings['cooldownNotifyAsWhisper'])) {
+        if (!cooldown.quiet && !(this.settings['cooldownNotifyAsWhisper'])) {
           opts.sender['message-type'] = 'whisper' // we want to whisp cooldown message
           let message = await global.commons.prepare('cooldowns.cooldown-triggered', { command: cooldown.key, seconds: Math.ceil((cooldown.miliseconds - now + timestamp) / 1000) })
           global.commons.sendMessage(message, opts.sender)

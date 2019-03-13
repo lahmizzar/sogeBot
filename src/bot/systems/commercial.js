@@ -22,6 +22,19 @@ class Commercial extends System {
     }
 
     super({ settings })
+    this.addWidget('commercial', 'widget-title-commercial', 'fas fa-dollar-sign');
+  }
+
+  sockets() {
+    this.socket.on('connection', (socket) => {
+      socket.on('commercial.run', (message) => {
+        global.tmi.message({
+          sender: { username: global.commons.getOwner() },
+          message: '!commercial ' + data.seconds,
+          skip: true,
+        })
+      });
+    })
   }
 
   async main (opts) {

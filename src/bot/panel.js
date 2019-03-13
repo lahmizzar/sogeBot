@@ -10,6 +10,7 @@ var basicAuth = require('basic-auth')
 const flatten = require('flat')
 var _ = require('lodash')
 const util = require('util')
+const gitCommitInfo = require('git-commit-info');
 
 const Parser = require('./parser')
 
@@ -190,8 +191,12 @@ function Panel () {
         await global.db.engine.update('cache.titles', { _id: String(item._id) }, { game: data.game, title: data.new })
       }
     })
-    socket.on('updateGameAndTitle', async (data) => {
-      global.api.setTitleAndGame(null, data)
+    socket.on('updateGameAndTitle', async (data, cb) => {
+      const status = await global.api.setTitleAndGame(null, data)
+
+      if (!status) { // twitch refused update
+        cb(true)
+      }
 
       data.title = data.title.trim()
       data.game = data.game.trim()
@@ -202,6 +207,7 @@ function Panel () {
       }
 
       self.sendStreamData(self, global.panel.io) // force dashboard update
+      cb(null)
     })
     socket.on('joinBot', async () => {
       global.tmi.join('bot', global.tmi.channel)
@@ -365,7 +371,10 @@ function Panel () {
       }
       cb(null, toEmit)
     })
-    socket.on('getVersion', function () { socket.emit('version', process.env.npm_package_version) })
+    socket.on('getVersion', function () {
+      const version = _.get(process, 'env.npm_package_version', 'x.y.z')
+      socket.emit('version', version.replace('SNAPSHOT', gitCommitInfo().shortHash || 'SNAPSHOT'))
+    })
 
     socket.on('parser.isRegistered', function (data) {
       socket.emit(data.emit, { isRegistered: new Parser().find(data.command) })
@@ -377,7 +386,9 @@ function Panel () {
           throw new Error('Function for this listener is undefined' +
             ' widget=' + listener.self.constructor.name + ' on=' + listener.on)
         }
-        try { await listener.fnc(listener.self, self.io, data) } catch (e) { global.log.error(e, listener.fnc) }
+        try { await listener.fnc(listener.self, self.io, data) } catch (e) {
+          global.log.error('Error on ' + listener.on + ' listener')
+        }
         if (listener.finally && listener.finally !== listener.fnc) listener.finally(listener.self, self.io)
       })
     })

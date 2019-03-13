@@ -3,7 +3,10 @@
 const constants = require('./constants')
 const moment = require('moment-timezone')
 const _ = require('lodash')
-const cluster = require('cluster')
+const {
+  isMainThread
+} = require('worker_threads');
+
 require('moment-precise-range-plugin')
 
 const config = require('@config')
@@ -11,7 +14,7 @@ config.timezone = config.timezone === 'system' || _.isNil(config.timezone) ? mom
 
 class Twitch {
   constructor () {
-    if (require('cluster').isMaster) {
+    if (isMainThread) {
       global.panel.addWidget('twitch', 'widget-title-monitor', 'fab fa-twitch')
 
       global.panel.registerSockets({
@@ -57,7 +60,7 @@ class Twitch {
 
   async followers (opts) {
     let events = await global.db.engine.find('widgetsEventList')
-    const onlineViewers = (await global.db.engine.find('users.online')).map((o) => o.username)
+    const onlineViewers = await global.users.getAllOnlineUsernames()
     const followers = (await global.db.engine.find('users', { is: { follower: true } })).map((o) => o.username)
 
     let onlineFollowers = _.intersection(onlineViewers, followers)
@@ -82,7 +85,7 @@ class Twitch {
 
   async subs (opts) {
     let events = await global.db.engine.find('widgetsEventList')
-    const onlineViewers = (await global.db.engine.find('users.online')).map((o) => o.username)
+    const onlineViewers = await global.users.getAllOnlineUsernames()
     const subscribers = (await global.db.engine.find('users', { is: { subscriber: true } })).map((o) => o.username)
 
     let onlineSubscribers = _.intersection(onlineViewers, subscribers)
@@ -116,8 +119,8 @@ class Twitch {
         .replace(/\$title/g, _.get(await global.db.engine.findOne('api.current', { key: 'title' }), 'value', 'n/a')), opts.sender)
       return
     }
-    if (cluster.isMaster) global.api.setTitleAndGame(opts.sender, { title: opts.parameters })
-    else if (process.send) process.send({ type: 'call', ns: 'api', fnc: 'setTitleAndGame', args: [opts.sender, { title: opts.parameters }] })
+    if (isMainThread) global.api.setTitleAndGame(opts.sender, { title: opts.parameters })
+    else global.workers.sendToMaster({ type: 'call', ns: 'api', fnc: 'setTitleAndGame', args: [opts.sender, { title: opts.parameters }] })
   }
 
   async getGame (opts) {
@@ -131,11 +134,11 @@ class Twitch {
         .replace(/\$game/g, _.get(await global.db.engine.findOne('api.current', { key: 'game' }), 'value', 'n/a')), opts.sender)
       return
     }
-    if (cluster.isMaster) {
+    if (isMainThread) {
       const games = await global.api.sendGameFromTwitch (global.api, null, opts.parameters)
       global.api.setTitleAndGame(opts.sender, { game: games[0] })
     }
-    else if (process.send) process.send({ type: 'call', ns: 'twitch', fnc: 'setGame', args: [opts] })
+    else global.workers.sendToMaster({ type: 'call', ns: 'twitch', fnc: 'setGame', args: [opts] })
   }
 }
 

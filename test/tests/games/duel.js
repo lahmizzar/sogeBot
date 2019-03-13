@@ -5,8 +5,10 @@ require('../../general.js')
 const db = require('../../general.js').db
 const message = require('../../general.js').message
 const variable = require('../../general.js').variable
+const time = require('../../general.js').time
 
 const _ = require('lodash')
+const assert = require('assert')
 
 const owner = { username: 'soge__' }
 const user1 = { username: 'user1', userId: String(_.random(999999, false)) }
@@ -14,12 +16,45 @@ const user2 = { username: 'user2', userId: String(_.random(999999, false)) }
 const command = '!duel'
 
 describe('Gambling - duel', () => {
-  before(async () => {
-    await db.cleanup()
-    await message.prepare()
+  describe('!duel bank', () => {
+    before(async () => {
+      await db.cleanup()
+      await message.prepare()
+    })
+
+    it('Bank should be empty at start', async () => {
+      global.games.duel.bank({ sender: user1 })
+      await message.isSent('gambling.duel.bank', user1, {
+        pointsName: await global.systems.points.getPointsName(0),
+        points: 0,
+        command: '!duel',
+      })
+    })
+
+    it('Add 200 points to duel bank', async () => {
+      for (let i = 0; i < 200; i++) {
+        await global.db.engine.insert(global.games.duel.collection.users, { tickets: 1, user: 'user' + i, userId: i });
+      }
+      const items = await global.db.engine.find(global.games.duel.collection.users);
+      assert.equal(items.length, 200);
+    })
+
+    it('Bank should have 200 tickets', async () => {
+      global.games.duel.bank({ sender: user1 })
+      await message.isSent('gambling.duel.bank', user1, {
+        pointsName: await global.systems.points.getPointsName(200),
+        points: 200,
+        command: '!duel',
+      })
+    })
   })
 
   describe('#914 - user1 is not correctly added to duel, if he is challenger', () => {
+    before(async () => {
+      await db.cleanup()
+      await message.prepare()
+    })
+
     it('set duel timestamp to 0 to force new duel', async () => {
       global.games.duel.settings._.timestamp = 0
       await variable.isEqual('global.games.duel.settings._.timestamp', 0)
@@ -82,6 +117,11 @@ describe('Gambling - duel', () => {
   })
 
   describe('Pick winner from huge tickets', () => {
+    before(async () => {
+      await db.cleanup()
+      await message.prepare()
+    })
+
     it('create duel', async () => {
       global.games.duel.settings._.timestamp = Number(new Date())
 

@@ -17,11 +17,17 @@
     "goalAmount": {
       "title": "Částka cíle"
     },
+    "countBitsAsTips": {
+      "title": "Počítat Bity s Tipy"
+    },
     "currentAmount": {
       "title": "Aktuální částka"
     },
     "endAfter": {
       "title": "Konec po"
+    },
+    "endAfterIgnore": {
+      "title": "Tento cíl nevyprší"
     },
     "fonts": {
       "title": "Písmo",
@@ -44,6 +50,9 @@
     },
     "borderColor": {
       "title": "Barva ohraničení"
+    },
+    "backgroundColor": {
+      "title": "Barva pozadí"
     },
     "type": {
       "title": "Typ"

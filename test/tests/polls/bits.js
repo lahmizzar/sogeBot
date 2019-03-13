@@ -1,5 +1,9 @@
 /* global describe it before */
-if (require('cluster').isWorker) process.exit()
+const {
+  isMainThread
+} = require('worker_threads');
+if (!isMainThread) process.exit()
+
 
 require('../../general.js')
 
@@ -16,8 +20,8 @@ const owner = { username: 'soge__' }
 describe('Polls - bits', () => {
   before(async () => {
     await db.cleanup()
-    await time.waitMs(200)
-      await message.prepare()
+    await time.waitMs(1000)
+    await message.prepare()
   })
 
   describe('Close not opened voting', () => {
@@ -52,7 +56,7 @@ describe('Polls - bits', () => {
       vid = String(cVote._id)
     })
     it(`!vote should return correct vote status`, async () => {
-      await time.waitMs(200)
+      await time.waitMs(1000)
       await message.prepare()
 
       await global.systems.polls.main({ sender: owner, parameters: ''  })
@@ -71,11 +75,11 @@ describe('Polls - bits', () => {
     it(`10 users will vote through bits for option 1 and another 10 for option 2`, async () => {
       for (let o of [1,2]) {
         for (let i = 0; i < 10; i++) {
-          const user = Number(Math.random() * 1000).toFixed(0)
+          const user = 'user' + [o, i].join('')
           await global.tmi.cheer({
             tags: {
               username: user,
-              userId: Number(Math.random() * 1000).toFixed(0),
+              userId: Number(user),
               bits: 10,
             },
             message: 'Cool I am voting for #vote' + o + ' enjoy!',
@@ -96,7 +100,7 @@ describe('Polls - bits', () => {
       }
     })
     it(`!vote should return correct vote status`, async () => {
-      await time.waitMs(200)
+      await time.waitMs(1000)
       await message.prepare()
 
       await global.systems.polls.main({ sender: owner, parameters: ''  })
@@ -107,7 +111,7 @@ describe('Polls - bits', () => {
     })
 
     it('Close voting', async () => {
-      await time.waitMs(200)
+      await time.waitMs(1000)
       await message.prepare()
 
       assert.isTrue(await global.systems.polls.close({ sender: owner }))
@@ -118,7 +122,7 @@ describe('Polls - bits', () => {
     })
 
     it(`!vote should return not in progress info`, async () => {
-      await time.waitMs(200)
+      await time.waitMs(1000)
       await message.prepare()
 
       await global.systems.polls.main({ sender: owner, parameters: ''  })
@@ -126,7 +130,7 @@ describe('Polls - bits', () => {
     })
 
     it(`!vote 1 should return not in progress info`, async () => {
-      await time.waitMs(200)
+      await time.waitMs(1000)
       await message.prepare()
 
       const user = Math.random()

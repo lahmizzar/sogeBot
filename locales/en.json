@@ -26,10 +26,6 @@
     },
     "settings": {
       "uptime-format": "Uptime format set to $value",
-      "atUsername": {
-        "true": "Usernames will be shown with @ like @foo",
-        "false": "Usernames will be shown without @ like foo"
-      },
       "sendWithMe": {
         "true": "Bot will send messages using /me",
         "false": "Bot won't send messages using /me"
@@ -40,8 +36,10 @@
     "days": "day|days",
     "hours": "hour|hours",
     "minutes": "minute|minutes",
+    "seconds": "second|seconds",
     "messages": "message|messages",
     "links": "link|links",
+    "empty": "empty",
     "isRegistered": "$sender, you cannot use !$keyword, because is already in use for another action!"
   },
   "uptime": {
@@ -278,7 +276,7 @@
       "sub": "<strong>subbed</strong> you | $tier",
       "subgift": "have <strong>gifted</strong> sub from $username",
       "subcommunitygift": "have <strong>gifted</strong> subs for $count viewers",
-      "resub": "<strong>resubbed</strong> you for $months months | $tier",
+      "resub": "<strong>resubbed</strong> you for $subStreak $subStreakName | $tier",
       "cheer": "<strong>cheered</strong> you for $bits bits",
       "tip": "<strong>tipped</strong> you for $formatted_amount"
     },
@@ -346,6 +344,11 @@
         "items": "Items",
         "bits": "Bits",
         "subgifts": "Subgifts",
+        "subStreakShareEnabled" : "Is substreak share enabled (true/false)",
+        "subStreak": "Current sub streak",
+        "subStreakName": "localized name of month (1 month, 2 months) for current sub strek",
+        "subCumulativeMonths": "Cumulative subscribe months",
+        "subCumulativeMonthsName": "localized name of month (1 month, 2 months) for cumulative subscribe months",
         "message": "Message",
         "reason": "Reason",
         "target": "Target",
@@ -355,7 +358,6 @@
         "months": "Months",
         "monthsName": "localized name of month (1 month, 2 months)",
         "oldGame": "Game before change",
-        "userObject": "Full user object",
         "recipientObject": "Full recipient object",
         "recipient": "Recipient",
         "ytSong": "Current song on YouTube",
@@ -369,7 +371,25 @@
         "latestCheerAmount": "Latest Cheer (amount)",
         "latestCheerMessage": "Latest Cheer (message)",
         "latestCheer": "Latest Cheer (username)",
-        "version": "Bot version"
+        "version": "Bot version",
+        "is": {
+          "moderator": "Is user mod? (bool)",
+          "subscriber": "Is user sub? (bool)",
+          "regular": "Is user regular? (bool)",
+          "follower": "Is user follower? (bool)",
+          "broadcaster": "Is user broadcaster? (bool)",
+          "bot": "Is user bot? (bool)",
+          "owner": "Is user bot owner? (bool)"
+        },
+        "recipientis": {
+          "moderator": "Is recipient mod? (bool)",
+          "subscriber": "Is recipient sub? (bool)",
+          "regular": "Is recipient regular? (bool)",
+          "follower": "Is recipient follower? (bool)",
+          "broadcaster": "Is recipient broadcaster? (bool)",
+          "bot": "Is recipient bot? (bool)",
+          "owner": "Is recipient bot owner? (bool)"
+        }
       }
     },
     "page-settings": {
@@ -540,6 +560,8 @@
     "subscribers": "Subscribers",
     "bits": "Bits",
     "subgifts": "Subgifts",
+    "subStreak": "Current sub streak",
+    "subCumulativeMonths": "Cumulative subscribe months",
     "tips": "Tips",
     "tier": "Tier",
     "status": "Status",
@@ -669,6 +691,7 @@
     "widget-title-latest-followers": "LATEST FOLLOWERS",
     "widget-title-latest-subscribers": "LATEST SUBSCRIBERS",
     "widget-title-commercial": "COMMERCIALS",
+    "widget-title-spotify": "SPOTIFY",
     "widget-title-join": "JOIN LIST",
     "widget-title-part": "PART LIST",
     "event": "event",
@@ -1042,6 +1065,7 @@
   },
   "gambling": {
     "duel": {
+      "bank": "$sender, current bank for $command is $points $pointsName",
       "lowerThanMinimalBet": "$sender, minimal bet for $command is $points $pointsName",
       "cooldown": "$sender, you cannot use $command for $cooldown $minutesName.",
       "joined": "$sender, good luck with your dueling skills. You bet on yourself $points $pointsName!",

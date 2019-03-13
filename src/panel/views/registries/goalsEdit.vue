@@ -169,6 +169,14 @@
                       </select>
                     </div>
 
+                    <div class="form-group col-md-12" v-if="currentGoal.type === 'tips'">
+                      <label for="countBitsAsTips-input">{{ translate('registry.goals.input.countBitsAsTips.title') }}</label>
+                      <button type="button" class="btn btn-block" :class="[currentGoal.countBitsAsTips ? 'btn-success' : 'btn-danger']" @click="$set(currentGoal, 'countBitsAsTips', !currentGoal.countBitsAsTips)">
+                        {{ translate((currentGoal.countBitsAsTips ? 'enabled' : 'disabled')) }}
+                      </button>
+                    </div>
+
+
                     <div class="form-group col-md-12">
                       <label for="goalAmount-input">{{ translate('registry.goals.input.goalAmount.title') }}</label>
                       <input v-model="currentGoal.goalAmount" type="number" min="1" class="form-control" id="goalAmount-input">
@@ -182,6 +190,13 @@
                     </div>
 
                     <div class="form-group col-md-12">
+                      <label for="endAfterIgnore-input">{{ translate('registry.goals.input.endAfterIgnore.title') }}</label>
+                      <button type="button" class="btn btn-block" :class="[currentGoal.endAfterIgnore ? 'btn-success' : 'btn-danger']" @click="$set(currentGoal, 'endAfterIgnore', !currentGoal.endAfterIgnore)">
+                        {{ translate((currentGoal.endAfterIgnore ? 'enabled' : 'disabled')) }}
+                      </button>
+                    </div>
+
+                    <div class="form-group col-md-12" v-if="!currentGoal.endAfterIgnore">
                       <label for="endAfter-input">{{ translate('registry.goals.input.endAfter.title') }}</label>
                       <datetime v-model="currentGoal.endAfter" input-class="form-control" type="datetime"></datetime>
                     </div>
@@ -252,7 +267,7 @@
                       <div class="form-group col-md-3">
                         <label for="fonts_borderPx_input">{{ translate('registry.goals.input.borderPx.title') }}</label>
                         <input v-model="currentGoal.customization.font.borderPx" type="number" min="0" class="form-control" id="fonts_borderPx_input">
-                        <small class="form-text text-muted">{{ translate('registry.goals.input.fontBorder.help') }}</small>
+                        <small class="form-text text-muted">{{ translate('registry.goals.input.borderPx.help') }}</small>
                         <div class="invalid-feedback"></div>
                       </div>
 
@@ -286,7 +301,7 @@
                       <div class="form-group col-md-3">
                         <label class="w-100" for="bar_height_input">{{ translate('registry.goals.input.barHeight.title') }}</label>
                         <input v-model="currentGoal.customization.bar.height" type="number" min="1" class="form-control" id="bar_height_input">
-                        <small class="form-text text-muted">{{ translate('registry.goals.barHeight.help') }}</small>
+                        <small class="form-text text-muted">{{ translate('registry.goals.input.barHeight.help') }}</small>
                         <div class="invalid-feedback"></div>
                       </div>
 
@@ -301,6 +316,12 @@
                           <label class="w-100" for="bar_color_input">{{ translate('registry.goals.input.borderColor.title') }}</label>
                           <input type="text" class="form-control col-10" id="bar_borderColor_input" v-model="currentGoal.customization.bar.borderColor">
                           <input type="color" class="form-control col-2" v-model="currentGoal.customization.bar.borderColor">
+                        </div>
+
+                        <div class="row pl-3 pr-3 pt-2">
+                          <label class="w-100" for="bar_color_input">{{ translate('registry.goals.input.backgroundColor.title') }}</label>
+                          <input type="text" class="form-control col-10" id="bar_backgroundColor_input" v-model="currentGoal.customization.bar.backgroundColor">
+                          <input type="color" class="form-control col-2" v-model="currentGoal.customization.bar.backgroundColor">
                         </div>
                       </div>
                     </div>
@@ -441,6 +462,9 @@ export default Vue.extend({
       }
 
       this.socket.emit('update', { collection: 'groups', items: [this.group], key: 'uid' }, (err, d) => {
+        for (let goal of this.goals) {
+          goal.currentAmount = Number(goal.currentAmount)
+        }
         this.socket.emit('set', { collection: 'goals', items: this.goals, where: { groupId: this.groupId } }, (err) => {
           this.state.save = 2
           this.$router.push({ name: 'GoalsRegistryEdit', params: { id: String(d.uid) } })
@@ -468,6 +492,7 @@ export default Vue.extend({
         customization: {
           bar: {
             color: '#00aa00',
+            backgroundColor: '#e9ecef',
             borderColor: '#000000',
             borderPx: 0,
             height: 50,
@@ -511,12 +536,12 @@ export default Vue.extend({
         timestamp: Date.now(),
         goalAmount: 1000,
         currentAmount: 0,
-        endAfter: (new Date(Date.now() + 24 * 60 * 60 * 1000)).toISOString()
+        endAfter: (new Date(Date.now() + 24 * 60 * 60 * 1000)).toISOString(),
+        endAfterIgnore: true,
+        countBitsAsTips: false,
       })
 
-      if (this.uiShowGoal === '') {
-        this.uiShowGoal = uid
-      }
+      this.uiShowGoal = uid
     }
   },
   mounted: function () {
@@ -528,6 +553,9 @@ export default Vue.extend({
       })
       this.socket.emit('find', { collection: 'goals', where: { groupId: this.$route.params.id }}, (err, d: Goals.Goal[]) => {
         this.goals = d
+        if (this.uiShowGoal === '' && this.goals.length > 0) {
+          this.uiShowGoal = this.goals[0].uid;
+        }
       })
     }
     axios.get('/fonts')

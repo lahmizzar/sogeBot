@@ -1,13 +1,19 @@
 const assert = require('chai').assert
 const until = require('test-until')
+const chalk = require('chalk')
 const sinon = require('sinon')
 const _ = require('lodash')
-const util = require('util')
 
 var eventSpy
 
+const __DEBUG__ = (process.env.DEBUG && process.env.DEBUG.includes('test'))
+
 module.exports = {
   prepare: function () {
+    if (__DEBUG__) {
+      console.log(chalk.bgRed('*** Restoring all spies ***'))
+    }
+
     if (eventSpy) eventSpy.restore()
     eventSpy = sinon.spy(global.events, 'fire')
 
@@ -15,6 +21,8 @@ module.exports = {
 
     global.tmi = {
       cheer: global.tmi.cheer,
+      message: global.tmi.message,
+      avgResponse: global.tmi.avgResponse,
       client: {
         bot: {
           chat: {
@@ -65,6 +73,7 @@ module.exports = {
     }, 5000)
   },
   isWarned: async function (entry, user, opts) {
+    user = _.cloneDeep(user)
     opts = opts || {}
     await until(async setError => {
       let expected = []
@@ -94,9 +103,8 @@ module.exports = {
       }
     }, 5000)
   },
-  isSent: async function (entry, user, opts) {
-    delete user.id
-
+  isSent: async function (entry, user, opts, wait) {
+    user = _.cloneDeep(user)
     opts = opts || {}
     await until(async setError => {
       let expected = []
@@ -122,7 +130,7 @@ module.exports = {
           */
           delete user['message-type'] // remove unnecessary message-type
           delete user['userId'] // remove unnecessary message-type
-          if (global.log.chatOut.calledWith(e, sinon.match(user))) {
+          if (global.log.chatOut.calledWith(e, sinon.match.has('username', user.username))) {
             isCorrectlyCalled = true
             break
           }
@@ -132,33 +140,34 @@ module.exports = {
         return true
       } catch (err) {
         return setError(
-          '\nExpected message: "' + JSON.stringify(expected) + '"\nActual message:   "' + (!_.isNil(global.log.chatOut.args) ? util.inspect(global.log.chatOut.args) : '') + '"' +
-          '\n\nExpected user: "' + JSON.stringify(user) + '"\nActual user:   "' + (!_.isNil(global.log.chatOut.lastCall) ? JSON.stringify(global.log.chatOut.lastCall.args[1]) : '') + '"')
+          '\nExpected message: "' + expected + '"\nExpected user: "' + JSON.stringify(user) +
+          '\n\nActual message:   "' + JSON.stringify(global.log.chatOut.args) + '"'
+        )
       }
-    }, 5000)
+    }, wait || 5000)
   },
   isSentRaw: async function (expected, user) {
-    delete user.id
-
+    user = _.cloneDeep(user)
     await until(setError => {
       try {
         let isOK = false
         if (_.isArray(expected)) {
           for (let e of expected) {
-            if (global.log.chatOut.calledWith(e, sinon.match(user))) {
+            if (global.log.chatOut.calledWith(e, sinon.match.has('username', user.username))) {
               isOK = true
               break
             }
           }
         } else {
-          isOK = global.log.chatOut.calledWith(expected, sinon.match(user))
+          isOK = global.log.chatOut.calledWith(expected, sinon.match.has('username', user.username))
         }
         assert.isTrue(isOK)
         return true
       } catch (err) {
         return setError(
-          '\nExpected message: "' + expected + '"\nActual message:   "' + (!_.isNil(global.log.chatOut.lastCall) ? global.log.chatOut.lastCall.args[0] : '') + '"' +
-          '\n\nExpected user: "' + JSON.stringify(user) + '"\nActual user:   "' + (!_.isNil(global.log.chatOut.lastCall) ? JSON.stringify(global.log.chatOut.lastCall.args[1]) : '') + '"')
+          '\nExpected message: "' + expected + '"\n\nExpected user: "' + JSON.stringify(user) +
+          '\n\n\nActual message:   "' + global.log.chatOut.args + '"'
+        )
       }
     }, 5000)
   }

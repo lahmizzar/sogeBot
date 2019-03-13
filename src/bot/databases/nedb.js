@@ -1,7 +1,9 @@
 const _ = require('lodash')
 const flatten = require('flat')
 const fs = require('fs')
-const cluster = require('cluster')
+const {
+  isMainThread
+} = require('worker_threads');
 
 const Interface = require('./interface')
 const Datastore = require('nedb')
@@ -9,7 +11,7 @@ const Datastore = require('nedb')
 class INeDB extends Interface {
   constructor (forceIndexes) {
     super('nedb')
-    this.createIndexes = forceIndexes || cluster.isWorker // create indexes on worker (cpu is always 1)
+    this.createIndexes = forceIndexes || !isMainThread // create indexes on worker (cpu is always 1)
     this.connected = true
 
     if (!fs.existsSync('./db')) fs.mkdirSync('./db')
@@ -89,7 +91,7 @@ class INeDB extends Interface {
     return this.table[table]
   }
 
-  async find (table, where) {
+  async find (table, where, lookup) {
     this.on(table) // init table
 
     where = where || {}
@@ -105,60 +107,73 @@ class INeDB extends Interface {
     where = flatten(where)
 
     return new Promise((resolve, reject) => {
-      try {
-        this.on(table).find(flatten(where), (err, items) => {
-          if (err) throw Error(err)
+      this.on(table).find(flatten(where), async (err, items) => {
+        if (err) {
+          global.log.error(err.message)
+          global.log.error(JSON.stringify({ type: 'find', table, where }))
+        }
 
-          // nedb needs to fake sum and group by
-          if (sumBy || groupBy) {
-            let _items = {}
-            for (let item of items) {
-              if (isNaN(_items[item[groupBy]])) _items[item[groupBy]] = 0
-              _items[item[groupBy]] += Number(item[sumBy])
-            }
-            items = []
-            for (let [_id, sum] of Object.entries(_items)) {
-              items.push({ _id, [sumBy]: sum })
+        if (lookup) {
+          // cast to array
+          if (lookup.constructor !== Array) lookup = [lookup]
+          for (const item of items) {
+            for (const l of lookup) {
+              item[l.as] = await global.db.engine.find(l.from, { [l.foreignField]: item[l.localField]})
             }
           }
+        }
 
-          // nedb needs to fake sort
-          if (sortBy !== '_id') {
-            // remove undefined values in sortBy
-            items = items.filter(o => _.has(o, sortBy))
+        // nedb needs to fake sum and group by
+        if (sumBy || groupBy) {
+          let _items = {}
+          for (let item of items) {
+            if (isNaN(_items[item[groupBy]])) _items[item[groupBy]] = 0
+            _items[item[groupBy]] += Number(item[sumBy])
           }
-          items = _.orderBy(items, sortBy, order)
+          items = []
+          for (let [_id, sum] of Object.entries(_items)) {
+            items.push({ _id, [sumBy]: sum })
+          }
+        }
 
-          // nedb needs to fake total
-          if (total) items = _.chunk(items, total)[0]
+        // nedb needs to fake sort
+        if (sortBy !== '_id') {
+          // remove undefined values in sortBy
+          items = items.filter(o => _.has(o, sortBy))
+        }
+        items = _.orderBy(items, sortBy, order)
 
-          resolve(items || [])
-        })
-      } catch (e) {
-        global.log.error(e.message)
-        global.log.error(JSON.stringify({ table, where }))
-        throw e
-      }
+        // nedb needs to fake total
+        if (total) items = _.chunk(items, total)[0]
+
+        resolve(items || [])
+      })
     })
   }
 
-  async findOne (table, where) {
+  async findOne (table, where, lookup) {
     this.on(table) // init table
 
     where = where || {}
 
     var self = this
     return new Promise(function (resolve, reject) {
-      try {
-        self.on(table).findOne(flatten(where), function (err, item) {
-          if (err) throw Error(err)
-          resolve(_.isNil(item) ? {} : item)
-        })
-      } catch (e) {
-        global.log.error(e.message)
-        global.log.error(JSON.stringify({ table, where }))
-        throw e
-      }
+      self.on(table).findOne(flatten(where), async (err, item) => {
+        if (err) {
+          global.log.error(err.message)
+          global.log.error(JSON.stringify({ type: 'findOne', table, where }))
+        }
+
+        if (lookup && item !== null) {
+          // cast to array
+          if (lookup.constructor !== Array) lookup = [lookup]
+          for (const l of lookup) {
+            item[l.as] = await global.db.engine.find(l.from, { [l.foreignField]: item[l.localField]})
+          }
+        }
+
+        resolve(_.isNil(item) ? {} : item)
+      })
     })
   }
 
@@ -171,16 +186,13 @@ class INeDB extends Interface {
 
     var self = this
     return new Promise(function (resolve, reject) {
-      try {
-        self.on(table).insert(flatten.unflatten(object), function (err, item) {
-          if (err) throw Error(err)
-          resolve(item)
-        })
-      } catch (e) {
-        global.log.error(e.message)
-        global.log.error(JSON.stringify({ table, object }))
-        throw e
-      }
+      self.on(table).insert(flatten.unflatten(object), function (err, item) {
+        if (err) {
+          global.log.error(err.message)
+          global.log.error(JSON.stringify({ type: 'insert', table, object }))
+        }
+        resolve(item)
+      })
     })
   }
 
@@ -189,16 +201,13 @@ class INeDB extends Interface {
 
     var self = this
     return new Promise(function (resolve, reject) {
-      try {
-        self.on(table).remove(flatten(where), { multi: true }, function (err, numRemoved) {
-          if (err) throw Error(err)
-          resolve(numRemoved)
-        })
-      } catch (e) {
-        global.log.error(e.message)
-        global.log.error(JSON.stringify({ table, where }))
-        throw e
-      }
+      self.on(table).remove(flatten(where), { multi: true }, function (err, numRemoved) {
+        if (err) {
+          global.log.error(err.message)
+          global.log.error(JSON.stringify({ type: 'remove', table, where }))
+        }
+        resolve(numRemoved)
+      })
     })
   }
 
@@ -207,23 +216,20 @@ class INeDB extends Interface {
 
     if (_.isEmpty(object)) {
       global.log.error('Object to update cannot be empty')
-      global.log.error(JSON.stringify({ table, object, where }))
+      global.log.error(JSON.stringify({ type: 'update', table, object, where }))
       return null
     }
 
     var self = this
     return new Promise(function (resolve, reject) {
       // DON'T EVER DELETE flatten ON OBJECT - with flatten object get updated and not replaced
-      try {
-        self.on(table).update(flatten(where), { $set: flatten(object, { safe: true }) }, { upsert: (_.isNil(where._id) && !_.isEmpty(where)), multi: (_.isEmpty(where)), returnUpdatedDocs: true }, function (err, numReplaced, affectedDocs) {
-          if (err) throw Error(err)
-          resolve(affectedDocs)
-        })
-      } catch (e) {
-        global.log.error(e.message)
-        global.log.error(JSON.stringify({ table, object, where }))
-        throw e
-      }
+      self.on(table).update(flatten(where), { $set: flatten(object, { safe: true }) }, { upsert: (_.isNil(where._id) && !_.isEmpty(where)), multi: (_.isEmpty(where)), returnUpdatedDocs: true }, function (err, numReplaced, affectedDocs) {
+        if (err) {
+          global.log.error(err.message)
+          global.log.error(JSON.stringify({ type: 'update', table, object, where }))
+        }
+        resolve(affectedDocs)
+      })
     })
   }
 
@@ -232,23 +238,20 @@ class INeDB extends Interface {
 
     if (_.isEmpty(object)) {
       global.log.error('Object to update cannot be empty')
-      global.log.error(JSON.stringify({ table, object, where }))
+      global.log.error(JSON.stringify({ type: 'incrementOne', table, object, where }))
       return null
     }
 
     var self = this
     return new Promise(function (resolve, reject) {
       // DON'T EVER DELETE flatten ON OBJECT - with flatten object get updated and not replaced
-      try {
-        self.on(table).update(flatten(where), { $inc: flatten(object) }, { upsert: true, multi: false, returnUpdatedDocs: true }, function (err, numReplaced, affectedDocs) {
-          if (err) throw Error(err)
-          resolve(affectedDocs)
-        })
-      } catch (e) {
-        global.log.error(e.message)
-        global.log.error(JSON.stringify({ table, object, where }))
-        throw e
-      }
+      self.on(table).update(flatten(where), { $inc: flatten(object) }, { upsert: true, multi: false, returnUpdatedDocs: true }, function (err, numReplaced, affectedDocs) {
+        if (err) {
+          global.log.error(err.message)
+          global.log.error(JSON.stringify({ type: 'incrementOne', table, object, where }))
+        }
+        resolve(affectedDocs)
+      })
     })
   }
 
@@ -257,23 +260,20 @@ class INeDB extends Interface {
 
     if (_.isEmpty(object)) {
       global.log.error('Object to update cannot be empty')
-      global.log.error(JSON.stringify({ table, object, where }))
+      global.log.error(JSON.stringify({ type: 'increment', table, object, where }))
       return null
     }
 
     var self = this
     return new Promise(function (resolve, reject) {
       // DON'T EVER DELETE flatten ON OBJECT - with flatten object get updated and not replaced
-      try {
-        self.on(table).update(flatten(where), { $inc: flatten(object) }, { upsert: true, multi: true, returnUpdatedDocs: true }, function (err, numReplaced, affectedDocs) {
-          if (err) throw Error(err)
-          resolve(affectedDocs)
-        })
-      } catch (e) {
-        global.log.error(e.message)
-        global.log.error(JSON.stringify({ table, object, where }))
-        throw e
-      }
+      self.on(table).update(flatten(where), { $inc: flatten(object) }, { upsert: true, multi: true, returnUpdatedDocs: true }, function (err, numReplaced, affectedDocs) {
+        if (err) {
+          global.log.error(err.message)
+          global.log.error(JSON.stringify({ type: 'increment', table, object, where }))
+        }
+        resolve(affectedDocs)
+      })
     })
   }
 
@@ -283,16 +283,13 @@ class INeDB extends Interface {
     var self = this
     return new Promise(function (resolve, reject) {
       // DON'T EVER DELETE flatten ON OBJECT - with flatten object get updated and not replaced
-      try {
-        self.on(table).count({}, function (err, count) {
-          if (err) throw Error(err)
-          resolve(count)
-        })
-      } catch (e) {
-        global.log.error(e.message)
-        global.log.error(JSON.stringify({ table }))
-        throw e
-      }
+      self.on(table).count({}, function (err, count) {
+        if (err) {
+          global.log.error(err.message)
+          global.log.error(JSON.stringify({ type: 'count', table }))
+        }
+        resolve(count)
+      })
     })
   }
 

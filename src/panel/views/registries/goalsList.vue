@@ -49,31 +49,37 @@
                 <dt class="col-6">{{translate('registry.goals.input.type.title')}}</dt>
                 <dd class="col-6">{{goal.type}}</dd>
 
+                <dt class="col-6" v-if="goal.type === 'tips'">{{translate('registry.goals.input.countBitsAsTips.title')}}</dt>
+                <dd class="col-6" v-if="goal.type === 'tips'">{{!!goal.countBitsAsTips}}</dd>
+
                 <dt class="col-6">{{translate('registry.goals.input.goalAmount.title')}}</dt>
                 <dd class="col-6">{{goal.goalAmount}}</dd>
 
                 <dt class="col-6">{{translate('registry.goals.input.endAfter.title')}}</dt>
-                <dd class="col-6">{{goal.endAfter}}</dd>
+                <dd class="col-6">
+                  <font-awesome-icon icon="infinity" fixed-width v-if="goal.endAfterIgnore"></font-awesome-icon>
+                  <template v-else>{{goal.endAfter}}</template>
+                </dd>
               </dl>
             </li>
           </ul>
         </div>
         <div class="card-footer text-right">
-          <hold-button class="btn-danger btn-reverse btn-shrink" @trigger="removeGoal(group.uid)" icon="trash">
+          <hold-button class="btn-danger btn-only-icon" @trigger="removeGoal(group.uid)" icon="trash">
             <template slot="title">{{translate('dialog.buttons.delete')}}</template>
             <template slot="onHoldTitle">{{translate('dialog.buttons.hold-to-delete')}}</template>
           </hold-button>
           <button-with-icon
             :text="'/overlays/goals/' + group.uid"
             :href="'/overlays/goals/' + group.uid"
-            class="btn-dark btn-reverse btn-shrink"
+            class="btn-dark btn-only-icon"
             icon="link"
             target="_blank"
             />
           <button-with-icon
             :text="translate('dialog.buttons.edit')"
             :href="'#/registry/goals/edit/' + group.uid"
-            class="btn-primary btn-reverse btn-shrink"
+            class="btn-primary btn-only-icon"
             icon="edit"
             />
         </div>
@@ -94,8 +100,9 @@
 
   import { library } from '@fortawesome/fontawesome-svg-core'
   import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome'
+  import { faInfinity } from '@fortawesome/free-solid-svg-icons';
 
-  library.add()
+  library.add(faInfinity)
 
   export default Vue.extend({
     components: {

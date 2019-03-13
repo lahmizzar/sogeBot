@@ -1,5 +1,9 @@
 /* global describe it before */
-if (require('cluster').isWorker) process.exit()
+const {
+  isMainThread
+} = require('worker_threads');
+if (!isMainThread) process.exit()
+
 
 require('../../general.js')
 
@@ -28,13 +32,13 @@ describe('systems/moderation - symbols()', () => {
 
     for (let test of tests.timeout) {
       it(`symbols '${test}' should not timeout`, async () => {
-        assert.isTrue(await global.systems.moderation.symbols({ sender: { username: 'testuser' }, message: test }))
+        assert.isTrue(await global.systems.moderation.symbols({ sender: { username: 'testuser', badges: {} }, message: test }))
       })
     }
 
     for (let test of tests.ok) {
       it(`symbols '${test}' should not timeout`, async () => {
-        assert.isTrue(await global.systems.moderation.symbols({ sender: { username: 'testuser' }, message: test }))
+        assert.isTrue(await global.systems.moderation.symbols({ sender: { username: 'testuser', badges: {} }, message: test }))
       })
     }
   })
@@ -47,13 +51,13 @@ describe('systems/moderation - symbols()', () => {
 
     for (let test of tests.timeout) {
       it(`symbols '${test}' should timeout`, async () => {
-        assert.isFalse(await global.systems.moderation.symbols({ sender: { username: 'testuser' }, message: test }))
+        assert.isFalse(await global.systems.moderation.symbols({ sender: { username: 'testuser', badges: {} }, message: test }))
       })
     }
 
     for (let test of tests.ok) {
       it(`symbols '${test}' should not timeout`, async () => {
-        assert.isTrue(await global.systems.moderation.symbols({ sender: { username: 'testuser' }, message: test }))
+        assert.isTrue(await global.systems.moderation.symbols({ sender: { username: 'testuser', badges: {} }, message: test }))
       })
     }
   })

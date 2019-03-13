@@ -1,6 +1,4 @@
 /* global describe it beforeEach */
-if (require('cluster').isWorker) process.exit()
-
 require('../../general.js')
 
 const assert = require('chai').assert
@@ -9,8 +7,8 @@ const db = require('../../general.js').db
 const message = require('../../general.js').message
 
 // users
-const owner = { username: 'soge__' }
-const subscriber = { username: 'sub1', isSubscriber: true }
+const owner = { badges: {}, username: 'soge__' }
+const subscriber = { badges: { subscriber: 1 }, username: 'sub1'}
 
 describe('Cooldowns - toggleSubscribers()', () => {
   beforeEach(async () => {

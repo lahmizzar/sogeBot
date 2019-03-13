@@ -3,6 +3,10 @@
 import Overlay from './_interface';
 
 import * as _ from 'lodash';
+const {
+  isMainThread,
+  // tslint:disable-next-line:no-var-requires
+} = require('worker_threads');
 
 class Goals extends Overlay {
   [x: string]: any; // TODO: remove after interface ported to TS
@@ -22,7 +26,7 @@ class Goals extends Overlay {
     super(options);
     this.addMenu({ category: 'registry', name: 'goals', id: '/registry/goals/list' });
 
-    if (require('cluster').isMaster) {
+    if (isMainThread) {
       global.db.engine.index({ table: this.collection.groups, index: 'uid', unique: true });
       global.db.engine.index({ table: this.collection.goals, index: 'uid', unique: true });
     }
@@ -43,8 +47,18 @@ class Goals extends Overlay {
     const goals: Goals.Goal[] = await global.db.engine.find(this.collection.goals, { type: 'bits' });
     for (const goal of goals) {
       const uid = String(goal.uid);
-      if (new Date(goal.endAfter).getTime() >= new Date().getTime()) {
+      if (new Date(goal.endAfter).getTime() >= new Date().getTime() || goal.endAfterIgnore) {
         await global.db.engine.incrementOne(this.collection.goals, { uid }, { currentAmount: bit.amount });
+      }
+    }
+
+    // tips with tracking bits
+    const tipsGoals: Goals.Goal[] = await global.db.engine.find(this.collection.goals, { type: 'tips', countBitsAsTips: true });
+    for (const goal of tipsGoals) {
+      const uid = String(goal.uid);
+      if (new Date(goal.endAfter).getTime() >= new Date().getTime() || goal.endAfterIgnore) {
+        const amount = parseFloat(global.currency.exchange(bit.amount / 100, 'USD', global.currency.settings.currency.mainCurrency));
+        await global.db.engine.incrementOne(this.collection.goals, { uid }, { currentAmount: amount });
       }
     }
   }
@@ -54,7 +68,7 @@ class Goals extends Overlay {
     for (const goal of goals) {
       const uid = String(goal.uid);
       const currentAmount = Number(global.currency.exchange(tip.amount, tip.currency, global.currency.settings.currency.mainCurrency));
-      if (new Date(goal.endAfter).getTime() >= new Date().getTime()) {
+      if (new Date(goal.endAfter).getTime() >= new Date().getTime() || goal.endAfterIgnore) {
         await global.db.engine.incrementOne(this.collection.goals, { uid }, { currentAmount });
       }
     }
@@ -64,7 +78,7 @@ class Goals extends Overlay {
     const goals: Goals.Goal[] = await global.db.engine.find(this.collection.goals, { type: 'followers' });
     for (const goal of goals) {
       const uid = String(goal.uid);
-      if (new Date(goal.endAfter).getTime() >= new Date().getTime()) {
+      if (new Date(goal.endAfter).getTime() >= new Date().getTime() || goal.endAfterIgnore) {
         await global.db.engine.incrementOne(this.collection.goals, { uid }, { currentAmount: 1 });
       }
     }
@@ -74,7 +88,7 @@ class Goals extends Overlay {
     const goals: Goals.Goal[] = await global.db.engine.find(this.collection.goals, { type: 'subscribers' });
     for (const goal of goals) {
       const uid = String(goal.uid);
-      if (new Date(goal.endAfter).getTime() >= new Date().getTime()) {
+      if (new Date(goal.endAfter).getTime() >= new Date().getTime() || goal.endAfterIgnore) {
         await global.db.engine.incrementOne(this.collection.goals, { uid }, { currentAmount: 1 });
       }
     }

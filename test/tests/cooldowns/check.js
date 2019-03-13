@@ -1,5 +1,9 @@
 /* global describe it before */
-if (require('cluster').isWorker) process.exit()
+const {
+  isMainThread
+} = require('worker_threads');
+if (!isMainThread) process.exit()
+
 
 require('../../general.js')
 
@@ -10,13 +14,85 @@ const message = require('../../general.js').message
 const variable = require('../../general.js').variable
 
 // users
-const owner = { username: 'soge__' }
-const usermod1 = { username: 'usermod1', isModerator: true }
-const subuser1 = { username: 'subuser1', isSubscriber: true }
-const testUser = { username: 'test' }
-const testUser2 = { username: 'test2' }
+const owner = { username: 'soge__', badges: {} }
+const usermod1 = { username: 'usermod1', badges: { moderator: 1 } }
+const subuser1 = { username: 'subuser1', badges: { subscriber: 1 } }
+const testUser = { username: 'test', badges: {} }
+const testUser2 = { username: 'test2', badges: {} }
 
 describe('Cooldowns - check()', () => {
+  describe('#1969 - commands with special chars should not threadlock check', () => {
+    before(async () => {
+      await db.cleanup()
+      await message.prepare()
+    })
+
+    it('Command !_debug should pass', async () => {
+      let isOk = await global.systems.cooldown.check({ sender: testUser, message: '!_debug' })
+      assert.isTrue(isOk)
+    })
+
+    it('Command !$debug should pass', async () => {
+      let isOk = await global.systems.cooldown.check({ sender: testUser, message: '!$debug' })
+      assert.isTrue(isOk)
+    })
+
+    it('Command `!_debug test` should pass', async () => {
+      let isOk = await global.systems.cooldown.check({ sender: testUser, message: '!_debug test' })
+      assert.isTrue(isOk)
+    })
+
+    it('Command `!$debug test` should pass', async () => {
+      let isOk = await global.systems.cooldown.check({ sender: testUser, message: '!$debug test' })
+      assert.isTrue(isOk)
+    })
+
+    it('Command `!_debug te$st` should pass', async () => {
+      let isOk = await global.systems.cooldown.check({ sender: testUser, message: '!_debug te$st' })
+      assert.isTrue(isOk)
+    })
+
+    it('Command `!$debug te$st` should pass', async () => {
+      let isOk = await global.systems.cooldown.check({ sender: testUser, message: '!$debug te$st' })
+      assert.isTrue(isOk)
+    })
+  })
+
+  describe('#1938 - !cmd with param (*)', () => {
+    before(async () => {
+      await db.cleanup()
+      await message.prepare()
+    })
+
+    it('create command', async () => {
+      let cmd = await global.db.engine.insert('systems.customcommands', { command: '!cmd', enabled: true, visible: true })
+      await global.db.engine.insert('systems.customcommands.responses', { cid: String(cmd._id), filter: '', response: '$param', permission: 1 })
+    })
+
+    it('Add !cmd to cooldown', async () => {
+      await global.db.engine.insert(global.systems.cooldown.collection.data, {
+        'key': '!cmd',
+        'type': 'global',
+        'quiet': true,
+        'owner': true,
+        'enabled': true,
+        'timestamp': 0,
+        'moderator': true,
+        'miliseconds': 60000
+      })
+    })
+
+    it('First user should PASS', async () => {
+      let isOk = await global.systems.cooldown.check({ sender: testUser, message: '!cmd (*)' })
+      assert.isTrue(isOk)
+    })
+
+    it('Second user should FAIL', async () => {
+      let isOk = await global.systems.cooldown.check({ sender: testUser2, message: '!cmd (*)' })
+      assert.isFalse(isOk)
+    })
+  })
+
   describe('#1658 - cooldown not working on not full cooldown object KonCha', async () => {
     before(async () => {
       await db.cleanup()
@@ -27,7 +103,7 @@ describe('Cooldowns - check()', () => {
     })
 
     it('Add usermod1 as moderator', async () => {
-      await global.db.engine.insert('users', { id: '2', username: 'usermod1', is: { mod: true } })
+      await global.db.engine.insert('users', { id: '2', username: 'usermod1', is: { moderator: true } })
     })
 
     it('Add global KonCha to cooldown', async () => {
@@ -74,7 +150,7 @@ describe('Cooldowns - check()', () => {
     })
 
     it('Add usermod1 as moderator', async () => {
-      await global.db.engine.insert('users', { id: '2', username: 'usermod1', is: { mod: true } })
+      await global.db.engine.insert('users', { id: '2', username: 'usermod1', is: { moderator: true } })
     })
 
     it('Add global !followage to cooldown', async () => {

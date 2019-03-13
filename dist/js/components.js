@@ -1,11 +1,16 @@
 /* globals translations, commons, Vue, _ $, io */
 
+const flattenKeys = (obj, path = []) =>
+    !_.isObject(obj)
+        ? { [path.join('.')]: obj }
+        : _.reduce(obj, (cum, next, key) => _.merge(cum, flattenKeys(next, [...path, key])), {});
+
 /* div with html filters */
 window.textWithTags = {
   props: ['value'],
   filters: {
     filterize: function (val) {
-      const filtersRegExp = new RegExp('\\$(' + _.sortBy(_.keys(translations.responses.variable), (o) => -o.length).join('|') + ')', 'g')
+      const filtersRegExp = new RegExp('\\$(' + _.sortBy(_.keys(flattenKeys(translations.responses.variable)), (o) => -o.length).join('|') + ')', 'g')
       val = val.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
       let matches = val.match(filtersRegExp)
       let output = val
@@ -97,7 +102,7 @@ window.textInput = {
           <template v-if="typeof translatedTitle === 'string'">{{ translatedTitle }}</template>
           <template v-else-if="typeof translatedTitle === 'object'">
             {{ translatedTitle.title }}
-            <small style="cursor: help;" class="textInputTooltip text-info ml-1" data-toggle="tooltip" data-html="true" :title="translatedTitle.help"><i class="fas fa-question"></i></small>
+            <small style="cursor: help;" class="textInputTooltip text-info ml-1" data-toggle="tooltip" data-html="true" :title="translatedTitle.help">[?]</small>
           </template>
         </span>
       </div>
@@ -230,7 +235,13 @@ window.toggleEnable = {
   template: `
     <div class="input-group">
       <div v-if="title" class="input-group-prepend">
-        <span class="input-group-text">{{ title }}</span>
+        <span class="input-group-text">
+          <template v-if="typeof title === 'string'">{{ title }}</template>
+          <template v-else>
+            {{ title.title }}
+            <small class="textInputTooltip text-info pl-1" data-toggle="tooltip" data-html="true" :title="title.help">[?]</small>
+          </template>
+        </span>
       </div>
       <button
         class="btn form-control"
@@ -245,7 +256,7 @@ window.toggleEnable = {
 
 /* textarea with editation */
 window.textAreaWithTags = {
-  props: ['value', 'placeholder', 'error'],
+  props: ['value', 'placeholder', 'error', 'filters'],
   watch: {
     editation: function (val, old) {
       if (val) {
@@ -277,11 +288,20 @@ window.textAreaWithTags = {
     heightStyle: function () {
       if (this.height === 0) return 'height: auto'
       return `height: ${this.height + 2}px`
-    }
+    },
+  },
+  mounted() {
+    this.timeout = setInterval(() => {
+      this.updateFilterBtnPosX();
+      this.updateFilterBtnPosY();
+    }, 100)
+  },
+  destroyed() {
+    clearInterval(this.timeout)
   },
   filters: {
     filterize: function (val) {
-      const filtersRegExp = new RegExp('\\$(' + _.sortBy(_.keys(translations.responses.variable), (o) => -o.length).join('|') + ')', 'g')
+      const filtersRegExp = new RegExp('\\$(' + _.sortBy(_.keys(flattenKeys(translations.responses.variable)), (o) => -o.length).join('|') + ')', 'g')
       val = val.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
       let matches = val.match(filtersRegExp)
       let output = val
@@ -297,18 +317,69 @@ window.textAreaWithTags = {
     }
   },
   methods: {
+    updateFilterBtnPosX() {
+      Vue.nextTick(() => {
+        let client = null
+
+        if (this.editation) {
+          client = this.$refs.textarea.getBoundingClientRect()
+        } else {
+          if (this.currentValue.trim().length === 0) {
+            client = this.$refs.placeholder.getBoundingClientRect()
+          } else {
+            client = this.$refs.div.getBoundingClientRect()
+          }
+        }
+        this.btnPosX = client.x + client.width - 50;
+      })
+    },
+    updateFilterBtnPosY() {
+      Vue.nextTick(() => {
+        let client = null
+
+        if (this.editation) {
+          client = this.$refs.textarea.getBoundingClientRect()
+        } else {
+          if (this.currentValue.trim().length === 0) {
+            client = this.$refs.placeholder.getBoundingClientRect()
+          } else {
+            client = this.$refs.div.getBoundingClientRect()
+          }
+        }
+        this.btnPosY = client.y + client.height - 47;
+      })
+    },
     onEnter (e) {
       // don't add newline
       e.stopPropagation()
       e.preventDefault()
       e.returnValue = false
       this.input = e.target.value
-    }
+    },
+    addVariable(variable) {
+      this.currentValue += '$' + variable
+      this.editation = true;
+      Vue.nextTick(() => {
+        this.$refs.textarea.focus()
+      })
+    },
+    toggleFilters() {
+      this.isFiltersVisible = !this.isFiltersVisible;
+      this.editation = true;
+      Vue.nextTick(() => {
+        this.$refs.textarea.focus()
+      })
+    },
   },
   data: function () {
     return {
       height: 0,
-      editation: false
+      isFiltersVisible: false,
+      editation: false,
+      isMounted: false,
+      btnPosX: 0,
+      btnPosY: 0,
+      timeout: null,
     }
   },
   template: `
@@ -316,18 +387,59 @@ window.textAreaWithTags = {
       class="form-control border-0 p-0 m-0"
       style="height: fit-content"
       v-bind:class="{ 'is-invalid': error }">
-      <textarea v-on:keydown.enter="onEnter" v-on:blur="editation = false" v-show="editation" ref="textarea" v-model="currentValue" v-bind:placeholder="placeholder" class="form-control" v-bind:style="heightStyle"></textarea>
-      <div class="form-control" ref="placeholder" style="cursor: text; overflow: auto; resize: vertical;"
+
+      <textarea style="min-height: 5em;" v-show="editation" v-on:keydown.enter="onEnter" v-on:blur="editation = false" ref="textarea" v-model="currentValue" v-bind:placeholder="placeholder" class="form-control" v-bind:style="heightStyle"></textarea>
+
+      <div class="form-control" ref="placeholder" style="cursor: text; overflow: auto; resize: vertical; min-height: 5em;"
         v-bind:class="{ 'is-invalid': error }"
         v-show="!editation && value.trim().length === 0"
         v-bind:style="heightStyle"
-        v-on:click="editation=true"><span class="text-muted" v-html="_placeholder"></span></div>
-      <div class="form-control" ref="div" style="cursor: text; overflow: auto; resize: vertical;"
+        v-on:click="editation=true"><span class="text-muted" v-html="_placeholder"></span>
+      </div>
+
+      <div class="form-control" ref="div" style="word-break: break-all; cursor: text; overflow: auto; resize: vertical; min-height: 5em;"
         v-bind:class="{ 'is-invalid': error }"
         v-show="!editation && value.trim().length > 0"
         v-on:click="editation=true"
         v-bind:style="heightStyle"
         v-html="$options.filters.filterize(value)">
+      </div>
+
+      <div v-if="filters && filters.length > 0"
+           style="position: fixed; z-index: 9999"
+           :style="{ left: btnPosX + 'px', top: btnPosY + 'px' }"
+           @mouseleave="isFiltersVisible=false">
+        <button type="button"
+                class="btn btn-sm border-0 ml-3 mt-3"
+                :class="[ isFiltersVisible ? 'btn-secondary' : 'btn-outline-secondary' ]"
+                @click="toggleFilters()">$</button>
+
+        <div class="border bg-light ml-3 mb-3 mr-3" v-show="isFiltersVisible">
+          <template v-for="filter of filters">
+            <div v-if="filter === 'global'">
+              <span class="editable-variable block" @click="addVariable('title')"> {{ commons.translate('responses.variable.title') }} </span>
+              <span class="editable-variable block" @click="addVariable('game')"> {{ commons.translate('responses.variable.game') }} </span>
+              <span class="editable-variable block" @click="addVariable('viewers')"> {{ commons.translate('responses.variable.viewers') }} </span>
+              <span class="editable-variable block" @click="addVariable('views')"> {{ commons.translate('responses.variable.views') }} </span>
+              <span class="editable-variable block" @click="addVariable('hosts')"> {{ commons.translate('responses.variable.hosts') }} </span>
+              <span class="editable-variable block" @click="addVariable('followers')"> {{ commons.translate('responses.variable.followers') }} </span>
+              <span class="editable-variable block" @click="addVariable('subscribers')"> {{ commons.translate('responses.variable.subscribers') }} </span>
+              <span class="editable-variable block" @click="addVariable('spotifySong')"> {{ commons.translate('responses.variable.spotifySong') }} </span>
+              <span class="editable-variable block" @click="addVariable('ytSong')"> {{ commons.translate('responses.variable.ytSong') }} </span>
+              <span class="editable-variable block" @click="addVariable('latestFollower')"> {{ commons.translate('responses.variable.latestFollower') }} </span>
+              <span class="editable-variable block" @click="addVariable('latestSubscriber')"> {{ commons.translate('responses.variable.latestSubscriber') }} </span>
+              <span class="editable-variable block" @click="addVariable('latestTipAmount')"> {{ commons.translate('responses.variable.latestTipAmount') }} </span>
+              <span class="editable-variable block" @click="addVariable('latestTipCurrency')"> {{ commons.translate('responses.variable.latestTipCurrency') }} </span>
+              <span class="editable-variable block" @click="addVariable('latestTipMessage')"> {{ commons.translate('responses.variable.latestTipMessage') }} </span>
+              <span class="editable-variable block" @click="addVariable('latestTip')"> {{ commons.translate('responses.variable.latestTip') }} </span>
+              <span class="editable-variable block" @click="addVariable('latestCheerAmount')"> {{ commons.translate('responses.variable.latestCheerAmount') }} </span>
+              <span class="editable-variable block" @click="addVariable('latestCheerMessage')"> {{ commons.translate('responses.variable.latestCheerMessage') }} </span>
+              <span class="editable-variable block" @click="addVariable('latestCheer')"> {{ commons.translate('responses.variable.latestCheer') }} </span>
+            </div>
+            <div v-else>
+            <span class="editable-variable block" @click="addVariable(filter)"> {{ commons.translate('responses.variable.' + filter) }} </span>
+          </template>
+        </div>
       </div>
     </div>
     `

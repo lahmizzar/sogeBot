@@ -4,17 +4,20 @@ const _ = require('lodash')
 const crypto = require('crypto')
 const safeEval = require('safe-eval')
 const axios = require('axios')
-const cluster = require('cluster')
+const {
+  isMainThread
+} = require('worker_threads');
 const mathjs = require('mathjs')
 const XRegExp = require('xregexp')
 
 const Message = require('./message')
+const constants = require('./constants')
 
 class CustomVariables {
   constructor () {
     this.timeouts = {}
 
-    if (cluster.isMaster) {
+    if (isMainThread) {
       this.addMenuAndListenersToPanel()
       this.checkIfCacheOrRefresh()
       global.db.engine.index({ table: 'custom.variables.history', index: 'cvarId' })
@@ -44,16 +47,16 @@ class CustomVariables {
         let item
         try {
           item = await global.db.engine.findOne('custom.variables', { _id: String(_id) })
-          item = await global.db.engine.update('custom.variables', { _id: String(_id) }, { currentValue: await this.runScript(item.evalValue, {}), runAt: new Date() })
+          item = await global.db.engine.update('custom.variables', { _id: String(_id) }, { currentValue: await this.runScript(item.evalValue, { _current: item.currentValue }), runAt: new Date() })
         } catch (e) {
           cb(e.stack, null)
         }
         cb(null, item)
       })
-      socket.on('test.script', async (script, cb) => {
+      socket.on('test.script', async (opts, cb) => {
         let returnedValue
         try {
-          returnedValue = await this.runScript(script, { sender: 'TestUser' })
+          returnedValue = await this.runScript(opts.evalValue, { _current: opts.currentValue, sender: 'TestUser' })
         } catch (e) {
           cb(e.stack, null)
         }
@@ -100,7 +103,7 @@ class CustomVariables {
 
     // we need to check +1 variables, as they are part of commentary
     const containUsers = !_.isNil(script.match(/users/g)) && script.match(/users/g).length > 1
-    const containRandom = !_.isNil(script.replace(/Math\.random|_\.random/g, '').match(/random/g)) && script.match(/users/g).length > 1
+    const containRandom = !_.isNil(script.replace(/Math\.random|_\.random/g, '').match(/random/g)) && !_.isNil(script.match(/users/g)) && script.match(/users/g).length > 1
     const containOnline = !_.isNil(script.match(/online/g))
     const containUrl = !_.isNil(script.match(/url\(['"](.*?)['"]\)/g))
 
@@ -170,8 +173,9 @@ class CustomVariables {
       _: _,
       users: users,
       random: randomVar,
-      sender: await global.configuration.getValue('atUsername') ? `@${sender}` : `${sender}`,
-      param: param
+      sender: global.users.settings.users.showWithAt ? `@${sender}` : `${sender}`,
+      param: param,
+      _current: opts._current
     }
 
     if (containUrl) {
@@ -199,7 +203,10 @@ class CustomVariables {
     if (_.isEmpty(item)) return '' // return empty if variable doesn't exist
 
     if (item.type === 'eval' && Number(item.runEvery) === 0) {
-      item.currentValue = await this.runScript(item.evalValue, opts)
+      item.currentValue = await this.runScript(item.evalValue, {
+        _current: item.currentValue,
+        ...opts
+      })
       await global.db.engine.update('custom.variables', { variableName }, { currentValue: item.currentValue, runAt: new Date() })
     }
 
@@ -219,12 +226,23 @@ class CustomVariables {
 
     opts.sender = _.isNil(opts.sender) ? null : opts.sender
     opts.readOnlyBypass = _.isNil(opts.readOnlyBypass) ? false : opts.readOnlyBypass
-
     // add simple text variable, if not existing
     if (_.isEmpty(item)) {
-      item = await global.db.engine.insert('custom.variables', { variableName, currentValue, type: 'text', responseType: 0 })
+      item = await global.db.engine.insert('custom.variables', { variableName, currentValue, type: 'text', responseType: 0, permission: constants.MODS })
     } else {
-      if (item.readOnly && !opts.readOnlyBypass) {
+      // set item permission to owner if missing
+      item.permission = typeof item.permission === 'undefined' ? constants.OWNER_ONLY : item.permission;
+      let [isRegular, isMod, isOwner] = await Promise.all([
+        global.commons.isRegular(opts.sender),
+        global.commons.isModerator(opts.sender),
+        global.commons.isOwner(opts.sender)
+      ])
+      const permissionsAreValid = _.isNil(opts.sender) ||
+                            (item.permission === constants.VIEWERS) ||
+                            (item.permission === constants.REGULAR && (isRegular || isMod || isOwner)) ||
+                            (item.permission === constants.MODS && (isMod || isOwner)) ||
+                            (item.permission === constants.OWNER_ONLY && isOwner);
+      if ((item.readOnly && !opts.readOnlyBypass) || !permissionsAreValid) {
         isOk = false
       } else {
         oldValue = item.currentValue
@@ -251,10 +269,12 @@ class CustomVariables {
       }
     }
 
+    item.setValue = item.currentValue
     if (isOk) {
       this.updateWidgetAndTitle(variableName)
       if (!isEval) {
         this.addChangeToHistory({ sender: opts.sender, item, oldValue })
+        item.currentValue = '' // be silent if parsed correctly
       }
     }
     return { updated: item, isOk, isEval }
@@ -273,7 +293,7 @@ class CustomVariables {
         item.runAt = _.isNil(item.runAt) ? 0 : item.runAt
         const shouldRun = item.runEvery > 0 && new Date().getTime() - new Date(item.runAt).getTime() >= item.runEvery
         if (shouldRun) {
-          let newValue = await this.runScript(item.evalValue, {})
+          let newValue = await this.runScript(item.evalValue, { _current: item.currentValue })
           await global.db.engine.update('custom.variables', { _id: String(item._id) }, { runAt: new Date(), currentValue: newValue })
           await this.updateWidgetAndTitle(item.variableName)
         }
@@ -283,16 +303,20 @@ class CustomVariables {
   }
 
   async updateWidgetAndTitle (variable) {
-    if (cluster.isWorker && process.send) process.send({ type: 'widget_custom_variables', emit: 'refresh' })
-    else if (!_.isNil(global.widgets.custom_variables.socket)) global.widgets.custom_variables.socket.emit('refresh') // send update to widget
+    if (!isMainThread) {
+      global.workers.sendToMaster({ type: 'widget_custom_variables', emit: 'refresh' })
+    } else if (!_.isNil(global.widgets.custom_variables.socket)) global.widgets.custom_variables.socket.emit('refresh') // send update to widget
 
     if (!_.isNil(variable)) {
       const regexp = new RegExp(`\\${variable}`, 'ig')
       let title = await global.cache.rawStatus()
 
       if (title.match(regexp)) {
-        if (cluster.isWorker && process.send) process.send({ type: 'call', ns: 'api', fnc: 'setTitleAndGame', args: [null] })
-        else global.api.setTitleAndGame(null)
+        if (!isMainThread) {
+          global.workers.sendToMaster({ type: 'call', ns: 'api', fnc: 'setTitleAndGame', args: [null] })
+        } else {
+          global.api.setTitleAndGame(null)
+        }
       }
     }
   }

@@ -1,5 +1,9 @@
 /* global describe it before */
-if (require('cluster').isWorker) process.exit()
+const {
+  isMainThread
+} = require('worker_threads');
+if (!isMainThread) process.exit()
+
 
 require('../../general.js')
 
@@ -16,7 +20,7 @@ const owner = { username: 'soge__' }
 describe('Polls - normal', () => {
   before(async () => {
     await db.cleanup()
-    await time.waitMs(200)
+    await time.waitMs(1000)
       await message.prepare()
   })
 
@@ -52,7 +56,7 @@ describe('Polls - normal', () => {
       vid = String(cVote._id)
     })
     it(`!vote should return correct vote status`, async () => {
-      await time.waitMs(200)
+      await time.waitMs(1000)
       await message.prepare()
 
       await global.systems.polls.main({ sender: owner, parameters: ''  })
@@ -82,7 +86,7 @@ describe('Polls - normal', () => {
     it(`10 users will vote for option 1 and another 10 for option 2`, async () => {
       for (let o of [1,2]) {
         for (let i = 0; i < 10; i++) {
-          const user = Number(Math.random() * 1000).toFixed(0)
+          const user = 'user' + [o, i].join('')
           await global.systems.polls.main({ sender: { username: user }, parameters: String(o) })
 
           await until(async (setError) => {
@@ -101,7 +105,7 @@ describe('Polls - normal', () => {
     })
 
     it(`!vote should return correct vote status`, async () => {
-      await time.waitMs(200)
+      await time.waitMs(1000)
       await message.prepare()
 
       await global.systems.polls.main({ sender: owner, parameters: ''  })
@@ -112,7 +116,7 @@ describe('Polls - normal', () => {
     })
 
     it('Close voting', async () => {
-      await time.waitMs(200)
+      await time.waitMs(1000)
       await message.prepare()
 
       assert.isTrue(await global.systems.polls.close({ sender: owner }))
@@ -123,7 +127,7 @@ describe('Polls - normal', () => {
     })
 
     it(`!vote should return not in progress info`, async () => {
-      await time.waitMs(200)
+      await time.waitMs(1000)
       await message.prepare()
 
       await global.systems.polls.main({ sender: owner, parameters: ''  })
@@ -131,7 +135,7 @@ describe('Polls - normal', () => {
     })
 
     it(`!vote 1 should return not in progress info`, async () => {
-      await time.waitMs(200)
+      await time.waitMs(1000)
       await message.prepare()
 
       const user = Math.random()

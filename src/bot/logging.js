@@ -9,7 +9,9 @@ var _ = require('lodash')
 var logDir = './logs'
 var moment = require('moment-timezone')
 const glob = require('glob')
-const cluster = require('cluster')
+const {
+  isMainThread,
+} = require('worker_threads');
 const config = require('@config')
 const chalk = require('chalk')
 
@@ -20,6 +22,7 @@ if (!fs.existsSync(logDir)) fs.mkdirSync(logDir)
 const logLevel = !_.isNil(process.env.LOGLEVEL) ? process.env.LOGLEVEL.toLowerCase().trim() : 'info'
 
 const levels = {
+  debug: 0,
   error: 1,
   chatIn: 2,
   chatOut: 2,
@@ -41,15 +44,14 @@ const levels = {
   info: 12,
   start: 12,
   stop: 12,
-  debug: 12,
   process: 99999
 }
 
-if (cluster.isWorker) {
+if (!isMainThread) {
   global.log = {}
   for (let level of Object.entries(levels)) {
     global.log[level[0]] = function (message, params) {
-      if (process.send) process.send({ type: 'log', level: level[0], message: message, params: params })
+      global.workers.sendToMaster({ type: 'log', level: level[0], message: message, params: params })
     }
   }
 } else {
@@ -88,7 +90,7 @@ if (cluster.isWorker) {
         const timestamp = moment().tz(config.timezone).format('YYYY-MM-DD[T]HH:mm:ss.SSS')
 
         if (info.level === 'debug') {
-          return chalk.yellow(`${timestamp} ${level} ${info.message} ${info.username ? `[${info.username}]` : ''}`)
+          return `${timestamp} ${level} ${chalk.red(info.category)} ${info.message} ${info.username ? `[${info.username}]` : ''}`
         } else return `${timestamp} ${level} ${info.message} ${info.username ? `[${info.username}]` : ''}`
       })
     ),
@@ -97,7 +99,8 @@ if (cluster.isWorker) {
       new winston.transports.Console()
     ],
     transports: [
-      new winston.transports.File({ filename: logDir + '/sogebot.log', colorize: false, maxsize: 5242880, maxFiles: 5 }),
+      new winston.transports.File({ filename: logDir + '/sogebot.log', colorize: false, maxsize: 5242880, maxFiles: 5, tailable: true }),
+      new winston.transports.File({ filename: logDir + '/debug.log', colorize: true, maxsize: 5242880, maxFiles: 5, level: 'debug', tailable: true }),
       new winston.transports.Console()
     ]
   })

@@ -7,6 +7,7 @@ const XRegExp = require('xregexp')
 // bot libraries
 const Parser = require('../parser')
 const constants = require('../constants')
+const Message = require('../message')
 import System from './_interface'
 
 /*
@@ -76,7 +77,7 @@ class Alias extends System {
     if (!tryingToBypass) {
       let [isRegular, isMod, isOwner] = await Promise.all([
         global.commons.isRegular(opts.sender),
-        global.commons.isMod(opts.sender),
+        global.commons.isModerator(opts.sender),
         global.commons.isOwner(opts.sender)
       ])
 
@@ -87,8 +88,12 @@ class Alias extends System {
         (alias.permission === constants.REGULAR && (isRegular || isMod || isOwner)) ||
         (alias.permission === constants.MODS && (isMod || isOwner)) ||
         (alias.permission === constants.OWNER_ONLY && isOwner)) {
-        global.log.process({ type: 'parse', sender: opts.sender, message: opts.message.replace(replace, `${alias.command}`) })
-        if (process.send) process.send({ type: 'parse', sender: opts.sender, message: opts.message.replace(replace, `${alias.command}`) })
+        // parse variables
+        const message = await new Message(opts.message.replace(replace, `${alias.command}`)).parse({
+          sender: opts.sender
+        });
+        global.log.process({ type: 'parse', sender: opts.sender, message })
+        global.tmi.message({ sender: opts.sender, message, skip: true })
       }
     }
     return true

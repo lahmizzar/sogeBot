@@ -5,7 +5,9 @@ const crypto = require('crypto')
 const safeEval = require('safe-eval')
 const flatten = require('flat')
 const moment = require('moment')
-const cluster = require('cluster')
+const {
+  isMainThread
+} = require('worker_threads');
 const axios = require('axios')
 
 const Message = require('./message')
@@ -14,34 +16,34 @@ class Events {
   constructor () {
     this.timeouts = {}
 
-    if (cluster.isWorker) return // dont do anything on worker
+    if (!isMainThread) return // dont do anything on worker
 
     this.supportedEventsList = [
-      { id: 'user-joined-channel', variables: [ 'username', 'userObject' ] },
-      { id: 'user-parted-channel', variables: [ 'username', 'userObject' ] },
-      { id: 'follow', variables: [ 'username', 'userObject' ] },
-      { id: 'unfollow', variables: [ 'username', 'userObject' ] },
-      { id: 'subscription', variables: [ 'username', 'userObject', 'method' ] },
-      { id: 'subgift', variables: [ 'username', 'userObject', 'recipient', 'recipientObject' ] },
+      { id: 'user-joined-channel', variables: [ 'username', 'is.moderator', 'is.subscriber', 'is.regular', 'is.follower', 'is.broadcaster', 'is.bot', 'is.owner' ] },
+      { id: 'user-parted-channel', variables: [ 'username', 'is.moderator', 'is.subscriber', 'is.regular', 'is.follower', 'is.broadcaster', 'is.bot', 'is.owner' ] },
+      { id: 'follow', variables: [ 'username', 'is.moderator', 'is.subscriber', 'is.regular', 'is.follower', 'is.broadcaster', 'is.bot', 'is.owner' ] },
+      { id: 'unfollow', variables: [ 'username', 'is.moderator', 'is.subscriber', 'is.regular', 'is.follower', 'is.broadcaster', 'is.bot', 'is.owner' ] },
+      { id: 'subscription', variables: [ 'username', 'is.moderator', 'is.subscriber', 'is.regular', 'is.follower', 'is.broadcaster', 'is.bot', 'is.owner', 'method', 'subCumulativeMonths' ] },
+      { id: 'subgift', variables: [ 'username', 'is.moderator', 'is.subscriber', 'is.regular', 'is.follower', 'is.broadcaster', 'is.bot', 'is.owner', 'recipient', 'recipientis.moderator', 'recipientis.subscriber', 'recipientis.regular', 'recipientis.follower', 'recipientis.broadcaster', 'recipientis.bot', 'recipientis.owner' ] },
       { id: 'subcommunitygift', variables: [ 'username', 'count' ] },
-      { id: 'resub', variables: [ 'username', 'userObject', 'months', 'monthsName', 'message' ] },
+      { id: 'resub', variables: [ 'username', 'is.moderator', 'is.subscriber', 'is.regular', 'is.follower', 'is.broadcaster', 'is.bot', 'is.owner', 'subStreakShareEnabled', 'subStreak', 'subStreakName', 'subCumulativeMonths', 'subCumulativeMonthsName' ] },
       { id: 'tip', variables: [ 'username', 'amount', 'currency', 'message' ] },
-      { id: 'command-send-x-times', variables: [ 'username', 'userObject', 'command', 'count' ], definitions: { fadeOutXCommands: 0, fadeOutInterval: 0, runEveryXCommands: 10, commandToWatch: '', runInterval: 0 }, check: this.checkCommandSendXTimes }, // runInterval 0 or null - disabled; > 0 every x seconds
-      { id: 'keyword-send-x-times', variables: [ 'username', 'userObject', 'command', 'count' ], definitions: { fadeOutXKeywords: 0, fadeOutInterval: 0, runEveryXKeywords: 10, keywordToWatch: '', runInterval: 0, resetCountEachMessage: false }, check: this.checkKeywordSendXTimes }, // runInterval 0 or null - disabled; > 0 every x seconds
+      { id: 'command-send-x-times', variables: [ 'username', 'is.moderator', 'is.subscriber', 'is.regular', 'is.follower', 'is.broadcaster', 'is.bot', 'is.owner', 'command', 'count' ], definitions: { fadeOutXCommands: 0, fadeOutInterval: 0, runEveryXCommands: 10, commandToWatch: '', runInterval: 0 }, check: this.checkCommandSendXTimes }, // runInterval 0 or null - disabled; > 0 every x seconds
+      { id: 'keyword-send-x-times', variables: [ 'username', 'is.moderator', 'is.subscriber', 'is.regular', 'is.follower', 'is.broadcaster', 'is.bot', 'is.owner', 'command', 'count' ], definitions: { fadeOutXKeywords: 0, fadeOutInterval: 0, runEveryXKeywords: 10, keywordToWatch: '', runInterval: 0, resetCountEachMessage: false }, check: this.checkKeywordSendXTimes }, // runInterval 0 or null - disabled; > 0 every x seconds
       { id: 'number-of-viewers-is-at-least-x', variables: [ 'count' ], definitions: { viewersAtLeast: 100, runInterval: 0 }, check: this.checkNumberOfViewersIsAtLeast }, // runInterval 0 or null - disabled; > 0 every x seconds
       { id: 'stream-started' },
       { id: 'stream-stopped' },
       { id: 'stream-is-running-x-minutes', definitions: { runAfterXMinutes: 100 }, check: this.checkStreamIsRunningXMinutes },
-      { id: 'cheer', variables: [ 'username', 'userObject', 'bits', 'message' ] },
+      { id: 'cheer', variables: [ 'username', 'is.moderator', 'is.subscriber', 'is.regular', 'is.follower', 'is.broadcaster', 'is.bot', 'is.owner', 'bits', 'message' ] },
       { id: 'clearchat' },
-      { id: 'action', variables: [ 'username', 'userObject' ] },
-      { id: 'ban', variables: [ 'username', 'userObject', 'reason' ] },
+      { id: 'action', variables: [ 'username', 'is.moderator', 'is.subscriber', 'is.regular', 'is.follower', 'is.broadcaster', 'is.bot', 'is.owner' ] },
+      { id: 'ban', variables: [ 'username', 'is.moderator', 'is.subscriber', 'is.regular', 'is.follower', 'is.broadcaster', 'is.bot', 'is.owner', 'reason' ] },
       { id: 'hosting', variables: [ 'target', 'viewers' ] },
-      { id: 'hosted', variables: [ 'username', 'userObject', 'viewers', 'autohost' ], definitions: { viewersAtLeast: 1, ignoreAutohost: false }, check: this.checkHosted },
-      { id: 'raid', variables: [ 'username', 'userObject', 'viewers' ], definitions: { viewersAtLeast: 1 }, check: this.checkRaid },
-      { id: 'mod', variables: [ 'username', 'userObject' ] },
+      { id: 'hosted', variables: [ 'username', 'is.moderator', 'is.subscriber', 'is.regular', 'is.follower', 'is.broadcaster', 'is.bot', 'is.owner', 'viewers', 'autohost' ], definitions: { viewersAtLeast: 1, ignoreAutohost: false }, check: this.checkHosted },
+      { id: 'raid', variables: [ 'username', 'is.moderator', 'is.subscriber', 'is.regular', 'is.follower', 'is.broadcaster', 'is.bot', 'is.owner', 'viewers' ], definitions: { viewersAtLeast: 1 }, check: this.checkRaid },
+      { id: 'mod', variables: [ 'username', 'is.moderator', 'is.subscriber', 'is.regular', 'is.follower', 'is.broadcaster', 'is.bot', 'is.owner' ] },
       { id: 'commercial', variables: [ 'duration' ] },
-      { id: 'timeout', variables: [ 'username', 'userObject', 'reason', 'duration' ] },
+      { id: 'timeout', variables: [ 'username', 'is.moderator', 'is.subscriber', 'is.regular', 'is.follower', 'is.broadcaster', 'is.bot', 'is.owner', 'reason', 'duration' ] },
       { id: 'every-x-minutes-of-stream', definitions: { runEveryXMinutes: 100 }, check: this.everyXMinutesOfStream },
       { id: 'game-changed', variables: [ 'oldGame', 'game' ] }
     ]
@@ -64,11 +66,6 @@ class Events {
 
     this.panel()
     this.fadeOut()
-
-    cluster.on('message', (worker, data) => {
-      if (data !== 'event') return // throw away another events
-      this.fire(data.eventId, data.attributes)
-    })
   }
 
   async panel () {
@@ -113,13 +110,32 @@ class Events {
   async fire (eventId, attributes) {
     attributes = _.clone(attributes) || {}
 
-    if (cluster.isWorker) { // emit process to master
-      if (process.send) process.send({ type: 'event', eventId: eventId, attributes: attributes })
-      return
+    if (!isMainThread) { // emit process to master
+      return global.workers.sendToMaster({ type: 'call', ns: 'events', fnc: 'fire', args: [eventId, attributes] })
     }
 
-    if (!_.isNil(_.get(attributes, 'username', null))) attributes.userObject = await global.users.getByName(attributes.username)
-    if (!_.isNil(_.get(attributes, 'recipient', null))) attributes.recipientObject = await global.users.getByName(attributes.recipient)
+    if (!_.isNil(_.get(attributes, 'username', null))) {
+      // add is object
+      attributes.is = {
+        moderator: await global.commons.isModerator(attributes.username),
+        subscriber: await global.commons.isSubscriber(attributes.username),
+        regular: await global.commons.isRegular(attributes.username),
+        broadcaster: global.commons.isBroadcaster(attributes.username),
+        bot: global.commons.isBot(attributes.username),
+        owner: global.commons.isOwner(attributes.username),
+      }
+    }
+    if (!_.isNil(_.get(attributes, 'recipient', null))) {
+      // add is object
+      attributes.recipientis = {
+        moderator: await global.commons.isModerator(attributes.recipient),
+        subscriber: await global.commons.isSubscriber(attributes.recipient),
+        regular: await global.commons.isRegular(attributes.recipient),
+        broadcaster: global.commons.isBroadcaster(attributes.recipient),
+        bot: global.commons.isBot(attributes.recipient),
+        owner: global.commons.isOwner(attributes.recipient),
+      }
+    }
     if (_.get(attributes, 'reset', false)) return this.reset(eventId)
 
     let events = await global.db.engine.find('events', { key: eventId, enabled: true })
@@ -132,16 +148,6 @@ class Events {
       if ((!shouldRunByFilter || !shouldRunByDefinition)) continue
 
       for (let operation of (await global.db.engine.find('events.operations', { eventId: eventId }))) {
-        if (!_.isNil(attributes.userObject)) {
-          // flatten userObject
-          let userObject = attributes.userObject
-          _.merge(attributes, flatten({ userObject: userObject }))
-        }
-        if (!_.isNil(attributes.recipientObject)) {
-          // flatten recipientObject
-          let recipientObject = attributes.recipientObject
-          _.merge(attributes, flatten({ recipientObject: recipientObject }))
-        }
         const isOperationSupported = !_.isNil(_.find(this.supportedOperationsList, (o) => o.id === operation.key))
         if (isOperationSupported) _.find(this.supportedOperationsList, (o) => o.id === operation.key).fire(operation.definitions, attributes)
       }
@@ -244,14 +250,18 @@ class Events {
       })
       await parse.process()
     } else {
-      _.sample(cluster.workers).send({ type: 'message', sender: (_.get(operation, 'isCommandQuiet', false) ? {} : { username: global.commons.getOwner() }), message: command, skip: true })
+      global.tmi.message({
+        sender: _.get(operation, 'isCommandQuiet', false) ? {} : { username: global.commons.getOwner() },
+        message: command,
+        skip: true
+      })
     }
   }
 
   async fireSendChatMessageOrWhisper (operation, attributes, whisper) {
     let username = _.isNil(attributes.username) ? global.commons.getOwner() : attributes.username
     let message = operation.messageToSend
-    const atUsername = await global.configuration.getValue('atUsername')
+    const atUsername = global.users.settings.users.showWithAt
 
     attributes = _(attributes).toPairs().sortBy((o) => -o[0].length).fromPairs().value() // reorder attributes by key length
     for (let [name, val] of Object.entries(attributes)) {
@@ -444,7 +454,7 @@ class Events {
     const context = {
       _: _,
       $username: _.get(attributes, 'username', null),
-      $userObject: _.get(attributes, 'userObject', null),
+      $userObject: _.get(attributes, 'is.moderator', 'is.subscriber', 'is.regular', 'is.follower', 'is.broadcaster', 'is.bot', 'is.owner', null),
       $method: _.get(attributes, 'method', null),
       $months: _.get(attributes, 'months', null),
       $monthsName: _.get(attributes, 'monthsName', null),
@@ -591,9 +601,27 @@ class Events {
         const months = _.random(0, 99, false)
         let attributes = {
           username: username,
-          userObject: await global.users.getByName(username),
+          is: {
+            moderator: _.random(0, 1, false) === 0,
+            subscriber: _.random(0, 1, false) === 0,
+            regular: _.random(0, 1, false) === 0,
+            broadcaster: _.random(0, 1, false) === 0,
+            bot: _.random(0, 1, false) === 0,
+            owner: _.random(0, 1, false) === 0,
+          },
           recipient: recipient,
-          recipientObject: await global.users.getByName(recipient),
+          recipientis: {
+            moderator: _.random(0, 1, false) === 0,
+            subscriber: _.random(0, 1, false) === 0,
+            regular: _.random(0, 1, false) === 0,
+            broadcaster: _.random(0, 1, false) === 0,
+            bot: _.random(0, 1, false) === 0,
+            owner: _.random(0, 1, false) === 0,
+          },
+          subStreak: _.random(10, 99, false),
+          subStreakName: global.commons.getLocalizedName(_.random(10, 99, false), 'core.months'),
+          subCumulativeMonths: _.random(10, 99, false),
+          subCumulativeMonthsName: global.commons.getLocalizedName(_.random(10, 99, false), 'core.months'),
           months: months,
           monthsName: global.commons.getLocalizedName(months, 'core.months'),
           message: _.sample(['', 'Lorem Ipsum Dolor Sit Amet']),

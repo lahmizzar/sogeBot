@@ -1,19 +1,26 @@
 const _ = require('lodash')
 const chalk = require('chalk')
-const cluster = require('cluster')
+
+const {
+  isMainThread
+} = require('worker_threads');
+
 const constants = require('./constants')
 
-let listeners = 0
+import { debug } from './debug';
 
 class Module {
   timeouts = {}
   isLoaded = false
 
-  constructor (opts) {
+  options: InterfaceSettings = {};
+  name: string = 'core';
+
+  constructor (opts = null) {
     /* Prepare default settings configuration
      * set enabled by default to true
      */
-    opts = opts || {}
+    opts = opts || this.options
     this._settings = opts.settings || {}
     this._settings.enabled = typeof this._settings.enabled !== 'undefined' ? this._settings.enabled : true
 
@@ -28,7 +35,7 @@ class Module {
 
     this._commands = []
     this._parsers = []
-    this._name = opts.name || 'core'
+    this._name = opts.name || this.name
     this._ui = opts.ui || {}
     this._opts = opts
 
@@ -43,7 +50,6 @@ class Module {
     })
 
     // prepare proxies for variables
-    this.threadListener()
     this.prepareCommandProxies()
     this.prepareVariableProxies()
     this.prepareParsers()
@@ -57,7 +63,7 @@ class Module {
     if (typeof retries === 'undefined') retries = 0
     if (retries === 6000) throw new Error('Something went wrong')
     if (!this.isLoaded) setTimeout(() => this._status(++retries), 10)
-    else this.status({ state: this.settings.enabled, quiet: cluster.isWorker }) // force status change and quiet on workers
+    else this.status({ state: this.settings.enabled, quiet: !isMainThread }) // force status change and quiet on workers
   }
 
   prepareParsers () {
@@ -76,34 +82,23 @@ class Module {
     this.isLoaded = true
   }
 
-  threadListener () {
-    if (cluster.isWorker) {
-      process.setMaxListeners(++listeners + 10)
-      process.on('message', async (data) => {
-        if (data.type === '/' + this._name + '/' + this.constructor.name.toLowerCase()) {
-          _.set(this.settings, data.path, data.value)
-        }
-      })
-    } else {
-      cluster.setMaxListeners(++listeners + 10)
-      cluster.on('message', async (worker, data) => {
-        if (data.type === '/' + this._name + '/' + this.constructor.name.toLowerCase()) {
-          _.set(this.settings, data.path, data.value)
-        }
-      })
-    }
-  }
-
   updateSettings (key, value) {
-    const proc = { type: '/' + this._name + '/' + this.constructor.name.toLowerCase(), path: key, value }
+    debug('interface.update', `Updating ${key} = ${value}, ${isMainThread}`)
+    if (Array.isArray(value)) {
+      value = [...value] // we need to retype otherwise we have worker clone error
+    }
+    const proc = {
+      type: 'interface',
+      system: this._name,
+      class: this.constructor.name,
+      path: `settings.${key}`,
+      value
+    }
 
-    if (cluster.isMaster) {
+    if (isMainThread) {
       global.db.engine.update(this._name + '.settings', { system: this.constructor.name.toLowerCase(), key }, { value })
-      // send to all cluster
-      // eslint-disable-next-line
-      for (let w of Object.entries(cluster.workers)) {
-        if (w[1].isConnected()) w[1].send(proc)
-      }
+      // send to all threads
+      global.workers.sendToAllWorkers(proc);
 
       if (this.on.change[key]) {
         // run on.change functions only on master
@@ -114,21 +109,33 @@ class Module {
       }
     } else {
       // send to master to update
-      if (process.send) process.send(proc)
+      global.workers.sendToMaster(proc);
     }
   }
 
   prepareVariableProxies () {
     // add main level proxy
     this.settings = new Proxy(this._settings, {
-      get: (target, key, receiver) => {
+      get: (target, key) => {
+        if (Array.isArray(target[key])) {
+          return this.arrayHandler(target, key)
+        }
         if (key === 'then' || key === 'toJSON') return Reflect.get(target, key, receiver) // promisify
         if (_.isSymbol(key)) return undefined // handle iterator
 
         if (typeof target[key] === 'object' && target[key] !== null) {
           const path = key
           return new Proxy(target[key], {
-            get: (target, key, receiver) => {
+            get: (target, key) => {
+              if (Array.isArray(target[key])) {
+                return this.arrayHandler(target, key, path)
+              }
+
+              const isUnsupportedObject = typeof target[key] === 'object' && !Array.isArray(target[key]) && target[key] !== null
+              if (isUnsupportedObject) {
+                global.log.warning(`!!! ${this.constructor.name.toLowerCase()}.settings.${path}.${key} object is not retroactive, for advanced object types use database directly.`)
+              }
+
               if (key === 'then' || key === 'toJSON') return Reflect.get(target, key, receiver) // promisify
               if (_.isSymbol(key)) return undefined // handle iterator
               return target[key]
@@ -164,11 +171,54 @@ class Module {
         if (_.isEqual(target[key], value)) return true
         // check if types match
         if (typeof target[key] !== 'undefined') {
-          if (typeof target[key] !== typeof value) throw new Error(key + ' set failed\n\texpected:\t' + typeof target[key] + '\n\tset:     \t' + typeof value)
+          if (typeof target[key] !== typeof value) {
+            const error = key + ' set failed\n\texpected:\t' + typeof target[key] + '\n\tset:     \t' + typeof value
+            // try retype if expected is number and we got string (from ui settings e.g.)
+            if (typeof target[key] === 'number') {
+              value = Number(value)
+              if (isNaN(value)) throw new Error(error)
+            } else throw new Error(error)
+          }
           target[key] = value
           this.updateSettings(key, value)
         }
         return true
+      }
+    })
+  }
+
+  arrayHandler(target, key, path) {
+    // we want to catch array functions
+    const path2 = key
+    return new Proxy(target[key], {
+      get: (target, prop) => {
+        const val = target[prop];
+        if (typeof val === 'function') {
+          if (['push', 'unshift'].includes(prop)) {
+            return (function (el) {
+              const modification = Array.prototype[prop].apply(target, arguments)
+              if (path) {
+                this.updateSettings(`${path}.${path2}`, this.settings[path][path2])
+              } else {
+                this.updateSettings(`${path2}`, this.settings[path2])
+              }
+              return modification;
+            }).bind(this)
+          }
+          if (['pop'].includes(prop)) {
+            return () => {
+              const el = Array.prototype[prop].apply(target, arguments);
+              if (path) {
+                this.updateSettings(`${path}.${path2}`, this.settings[path][path2])
+              } else {
+                this.updateSettings(`${path2}`, this.settings[path2])
+              }
+              return el;
+            }
+          }
+          return val.bind(target);
+        }
+        return val;
       }
     })
   }
@@ -199,7 +249,7 @@ class Module {
   }
 
   async _indexDbs () {
-    if (cluster.isMaster) {
+    if (isMainThread) {
       clearTimeout(this.timeouts[`${this.constructor.name}._indexDbs`])
       if (!global.db.engine.connected) {
         this.timeouts[`${this.constructor.name}._indexDbs`] = setTimeout(() => this._indexDbs(), 1000)
@@ -211,11 +261,12 @@ class Module {
   }
 
   _sockets () {
-    clearTimeout(this.timeouts[`${this.constructor.name}.sockets`])
+    if (!isMainThread) return;
 
+    clearTimeout(this.timeouts[`${this.constructor.name}.sockets`])
     if (_.isNil(global.panel)) {
       this.timeouts[`${this.constructor.name}._sockets`] = setTimeout(() => this._sockets(), 1000)
-    } else if (cluster.isMaster) {
+    } else {
       this.socket = global.panel.io.of('/' + this._name + '/' + this.constructor.name.toLowerCase())
       if (!_.isNil(this.sockets)) {
         this.sockets()
@@ -229,10 +280,17 @@ class Module {
         socket.on('settings', async (cb) => {
           cb(null, await this.getAllSettings(), await this.getUI())
         })
+        socket.on('set.value', async (variable, value, cb) => {
+          this[variable] = value
+          if (typeof cb === 'function') cb(null, {variable, value})
+        })
+        socket.on('get.value', async (variable, cb) => {
+          cb(null, await this[variable])
+        })
         socket.on('settings.update', async (data, cb) => {
           try {
             for (let [key, value] of Object.entries(data)) {
-              if (key === 'enabled' && ['core', 'overlays'].includes(this._name)) continue
+              if (key === 'enabled' && ['core', 'overlays', 'widgets'].includes(this._name)) continue
               else if (key === '_permissions') {
                 for (let [command, currentValue] of Object.entries(value)) {
                   command = this._commands.find(o => o.name === command)
@@ -247,16 +305,24 @@ class Module {
               } else {
                 if (_.isObjectLike(value)) {
                   for (let [defaultValue, currentValue] of Object.entries(value)) {
-                    this.settings[key][defaultValue] = currentValue
+                    if (typeof this.settings[key] !== 'undefined' && typeof this.settings[key][defaultValue] !== 'undefined') {
+                      // save only defined values
+                      this.settings[key][defaultValue] = currentValue
+                    }
                   }
                 } else this.settings[key] = value
               }
             }
           } catch (e) {
             global.log.error(e.stack)
-            setTimeout(() => cb(e.stack), 1000)
+            if (typeof cb === 'function') {
+              setTimeout(() => cb(e.stack), 1000)
+            }
           }
-          setTimeout(() => cb(null), 1000)
+
+          if (typeof cb === 'function') {
+            setTimeout(() => cb(null), 1000)
+          }
         })
         // difference between set and update is that set will set exact 1:1 values of opts.items
         // so it will also DELETE additional data
@@ -427,21 +493,21 @@ class Module {
 
   async status (opts) {
     opts = opts || {}
-    if (['core', 'overlays'].includes(this._name)) return true
+    if (['core', 'overlays', 'widgets'].includes(this._name)) return true
 
     const areDependenciesEnabled = await this._dependenciesEnabled()
-    const isMasterAndStatusOnly = cluster.isMaster && _.isNil(opts.state)
+    const isMasterAndStatusOnly = isMainThread && _.isNil(opts.state)
     const isStatusChanged = !_.isNil(opts.state)
     const isDisabledByEnv = !_.isNil(process.env.DISABLE) &&
       (process.env.DISABLE.toLowerCase().split(',').includes(this.constructor.name.toLowerCase()) || process.env.DISABLE === '*')
 
     if (isStatusChanged) this.settings.enabled = opts.state
-    else opts.state = await this.settings.enabled
+    else opts.state = this.settings.enabled
 
     if (!areDependenciesEnabled || isDisabledByEnv) opts.state = false // force disable if dependencies are disabled or disabled by env
 
     // on.change handler on enabled
-    if (cluster.isMaster && isStatusChanged) {
+    if (isMainThread && isStatusChanged) {
       if (this.on.change.enabled) {
         // run on.change functions only on master
         for (let fnc of this.on.change.enabled) {
@@ -461,7 +527,7 @@ class Module {
   }
 
   addMenu (opts) {
-    if (cluster.isMaster) {
+    if (isMainThread) {
       clearTimeout(this.timeouts[`${this.constructor.name}.${opts.id}.addMenu`])
 
       if (_.isNil(global.panel)) {
@@ -473,7 +539,7 @@ class Module {
   }
 
   addWidget (...opts) {
-    if (cluster.isMaster) {
+    if (isMainThread) {
       clearTimeout(this.timeouts[`${this.constructor.name}.${opts[0]}.addWidget`])
 
       if (_.isNil(global.panel)) {
@@ -494,11 +560,11 @@ class Module {
 
       if (!_.isObject(values)) {
         // we are expecting bool, string, number
-        promisedSettings[category] = await this.settings[category]
+        promisedSettings[category] = this.settings[category]
       } else {
         // we are expecting one more layer
         for (let o of Object.entries(values)) {
-          promisedSettings[category][o[0]] = await this.settings[category][o[0]]
+          promisedSettings[category][o[0]] = this.settings[category][o[0]]
         }
       }
     }
@@ -574,7 +640,7 @@ class Module {
           commands.push({
             this: this,
             id: command,
-            command: await this.settings.commands[command],
+            command: this.settings.commands[command],
             fnc: this[fnc],
             _fncName: fnc,
             permission: constants.VIEWERS,
@@ -608,7 +674,7 @@ class Module {
           }
 
           command.permission = _.isNil(command.permission) ? constants.VIEWERS : command.permission
-          command.command = _.isNil(command.command) ? await this.settings.commands[command.name] : command.command
+          command.command = _.isNil(command.command) ? this.settings.commands[command.name] : command.command
           commands.push({
             this: this,
             id: command.name,

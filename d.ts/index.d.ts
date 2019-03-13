@@ -15,6 +15,9 @@ declare namespace NodeJS {
     systems: any,
     users: any,
     lib: any,
+    workers: Workers.main,
+    customvariables: any,
+    tmi: any,
     oauth: {
       settings: {
         bot: {
@@ -28,6 +31,18 @@ declare namespace NodeJS {
   }
 }
 
+type Sender = {
+  username: string,
+  userId: string,
+  badges: {
+    subscriber?: undefined | number,
+    premium?: undefined | number,
+    globalMod? : undefined | number,
+    moderator? : undefined | number,
+
+  }
+}
+
 type Command = {
   name: string,
   fnc?: string,
@@ -37,7 +52,8 @@ type Command = {
 
 type onEventSub = {
   username: string,
-  userId: string
+  userId: string,
+  subCumulativeMonths: number,
 }
 
 type onEventFollow = {
@@ -61,12 +77,7 @@ type onEventBit = {
 }
 
 type onEventMessage = {
-  sender: {
-    username: string,
-    userId: string,
-    isSubscriber: boolean,
-    isTurboSubscriber: boolean
-  } | null,
+  sender: Sender | null,
   message: string,
   timestamp: string
 }
@@ -130,12 +141,7 @@ type UISortableList = {
 }
 
 type CommandOptions = {
-  sender: {
-    username: string,
-    userId: string,
-    isSubscriber: boolean,
-    isTurboSubscriber: boolean
-  },
+  sender: Sender,
   command: string,
   parameters: string
 }

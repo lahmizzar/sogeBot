@@ -1,5 +1,9 @@
 /* global describe it beforeEach */
-if (require('cluster').isWorker) process.exit()
+const {
+  isMainThread
+} = require('worker_threads');
+if (!isMainThread) process.exit()
+
 
 const assert = require('chai').assert
 require('../../general.js')
@@ -9,11 +13,23 @@ const message = require('../../general.js').message
 
 // users
 const owner = { username: 'soge__' }
+const user = { username: 'user' }
 
 describe('Alias - run()', () => {
   beforeEach(async () => {
     await db.cleanup()
     await message.prepare()
+  })
+
+  it('!a should show correctly command with link (skip is true)', async () => {
+    global.systems.alias.add({ sender: owner, parameters: 'viewer !a !test http://google.com' })
+    await message.isSent('alias.alias-was-added', owner, { alias: '!a', command: '!test http://google.com', sender: owner.username })
+
+    global.systems.customCommands.add({ sender: owner, parameters: '!test $param' })
+    await message.isSent('customcmds.command-was-added', owner, { response: '$param', command: '!test', sender: owner.username })
+
+    global.systems.alias.run({ sender: user, message: '!a' })
+    await message.isSentRaw('http://google.com', user)
   })
 
   it('!a will show !duel', async () => {

@@ -2,7 +2,9 @@ const _ = require('lodash')
 const axios = require('axios')
 const querystring = require('querystring')
 const moment = require('moment')
-const cluster = require('cluster')
+const {
+  isMainThread
+} = require('worker_threads');
 const stacktrace = require('stacktrace-parser')
 const fs = require('fs')
 const chalk = require('chalk')
@@ -20,7 +22,7 @@ class API {
   }
 
   constructor () {
-    if (cluster.isMaster) {
+    if (isMainThread) {
       global.panel.addMenu({ category: 'logs', name: 'api', id: 'apistats' })
 
       this.calls = {
@@ -89,219 +91,20 @@ class API {
       this.retries = {
         getCurrentStreamData: 0,
         getChannelDataOldAPI: 0,
-        getChannelSubscribersOldAPI: 0
+        getChannelSubscribers: 0
       }
 
       this._loadCachedStatusAndGame()
 
-      setInterval(async () => {
-        if (typeof this.timeouts['getCurrentStreamData'] === 'undefined') this.timeouts['getCurrentStreamData'] = { opts: { interval: true }, isRunning: false }
-
-        if (!this.timeouts['getCurrentStreamData'].isRunning) {
-          this.timeouts['getCurrentStreamData'].isRunning = true
-          if (__DEBUG__.INTERVAL) global.log.info(chalk.yellow('getCurrentStreamData() ') + 'start')
-          const value = await Promise.race([
-            this.getCurrentStreamData(this.timeouts['getCurrentStreamData'].opts),
-            this.timeoutAfterMs(10000)
-          ])
-          if (__DEBUG__.INTERVAL) global.log.info(chalk.yellow('getCurrentStreamData() ') + JSON.stringify(value))
-
-          if (value.state) { // if is ok, update opts and run unlock after a while
-            if (typeof value.opts !== 'undefined') this.timeouts['getCurrentStreamData'].opts = value.opts
-            setTimeout(() => {
-              this.timeouts['getCurrentStreamData'].isRunning = false
-            }, 60000)
-          } else { // else run next tick
-            this.timeouts['getCurrentStreamData'].isRunning = false
-          }
-        }
-      }, 1000)
-
-      setInterval(async () => {
-        if (typeof this.timeouts['updateChannelViews'] === 'undefined') this.timeouts['updateChannelViews'] = { opts: true, isRunning: false }
-
-        if (!this.timeouts['updateChannelViews'].isRunning) {
-          this.timeouts['updateChannelViews'].isRunning = true
-          if (__DEBUG__.INTERVAL) global.log.info(chalk.yellow('updateChannelViews() ') + 'start')
-          const value = await Promise.race([
-            this.updateChannelViews(this.timeouts['updateChannelViews'].opts),
-            this.timeoutAfterMs(10000)
-          ])
-          if (__DEBUG__.INTERVAL) global.log.info(chalk.yellow('updateChannelViews() ') + JSON.stringify(value))
-
-          if (value.state) { // if is ok, update opts and run unlock after a while
-            if (typeof value.opts !== 'undefined') this.timeouts['updateChannelViews'].opts = value.opts
-            setTimeout(() => {
-              this.timeouts['updateChannelViews'].isRunning = false
-            }, 60000)
-          } else { // else run next tick
-            this.timeouts['updateChannelViews'].isRunning = false
-          }
-        }
-      }, 1000)
-
-      setInterval(async () => {
-        if (typeof this.timeouts['getLatest100Followers'] === 'undefined') this.timeouts['getLatest100Followers'] = { opts: true, isRunning: false, isPaused: false }
-        if (this.timeouts['getLatest100Followers'].isPaused) return
-
-        if (!this.timeouts['getLatest100Followers'].isRunning) {
-          this.timeouts['getLatest100Followers'].isRunning = true
-          if (__DEBUG__.INTERVAL) global.log.info(chalk.yellow('getLatest100Followers() ') + 'start')
-          const value = await Promise.race([
-            this.getLatest100Followers(this.timeouts['getLatest100Followers'].opts),
-            this.timeoutAfterMs(10000)
-          ])
-          if (__DEBUG__.INTERVAL) global.log.info(chalk.yellow('getLatest100Followers() ') + JSON.stringify(value))
-
-          if (value.state) { // if is ok, update opts and run unlock after a while
-            if (typeof value.opts !== 'undefined') this.timeouts['getLatest100Followers'].opts = value.opts
-            setTimeout(() => {
-              this.timeouts['getLatest100Followers'].isRunning = false
-            }, 60000)
-          } else { // else run next tick
-            this.timeouts['getLatest100Followers'].isRunning = false
-          }
-        }
-      }, 1000)
-
-      setInterval(async () => {
-        if (typeof this.timeouts['getChannelHosts'] === 'undefined') this.timeouts['getChannelHosts'] = { opts: {}, isRunning: false }
-
-        if (!this.timeouts['getChannelHosts'].isRunning) {
-          this.timeouts['getChannelHosts'].isRunning = true
-          if (__DEBUG__.INTERVAL) global.log.info(chalk.yellow('getChannelHosts() ') + 'start')
-          const value = await Promise.race([
-            this.getChannelHosts(this.timeouts['getChannelHosts'].opts),
-            this.timeoutAfterMs(10000)
-          ])
-          if (__DEBUG__.INTERVAL) global.log.info(chalk.yellow('getChannelHosts() ') + JSON.stringify(value))
-
-          if (value.state) { // if is ok, update opts and run unlock after a while
-            if (typeof value.opts !== 'undefined') this.timeouts['getChannelHosts'].opts = value.opts
-            setTimeout(() => {
-              this.timeouts['getChannelHosts'].isRunning = false
-            }, 60000)
-          } else { // else run next tick
-            this.timeouts['getChannelHosts'].isRunning = false
-          }
-        }
-      }, 1000)
-
-      setInterval(async () => {
-        if (typeof this.timeouts['getChannelChattersUnofficialAPI'] === 'undefined') this.timeouts['getChannelChattersUnofficialAPI'] = { opts: { saveToWidget: false }, isRunning: false }
-
-        if (!this.timeouts['getChannelChattersUnofficialAPI'].isRunning) {
-          this.timeouts['getChannelChattersUnofficialAPI'].isRunning = true
-          if (__DEBUG__.INTERVAL) global.log.info(chalk.yellow('getChannelChattersUnofficialAPI() ') + 'start')
-          const value = await Promise.race([
-            this.getChannelChattersUnofficialAPI(this.timeouts['getChannelChattersUnofficialAPI'].opts),
-            this.timeoutAfterMs(10000)
-          ])
-          if (__DEBUG__.INTERVAL) global.log.info(chalk.yellow('getChannelChattersUnofficialAPI() ') + JSON.stringify(value))
-
-          if (value.state) { // if is ok, update opts and run unlock after a while
-            if (typeof value.opts !== 'undefined') this.timeouts['getChannelChattersUnofficialAPI'].opts = value.opts
-            setTimeout(() => {
-              this.timeouts['getChannelChattersUnofficialAPI'].isRunning = false
-            }, 60000)
-          } else { // else run next tick
-            this.timeouts['getChannelChattersUnofficialAPI'].isRunning = false
-          }
-        }
-      }, 1000)
-
-      setInterval(async () => {
-        if (typeof this.timeouts['getChannelSubscribersOldAPI'] === 'undefined') this.timeouts['getChannelSubscribersOldAPI'] = { opts: {}, isRunning: false }
-
-        if (!this.timeouts['getChannelSubscribersOldAPI'].isRunning) {
-          this.timeouts['getChannelSubscribersOldAPI'].isRunning = true
-          if (__DEBUG__.INTERVAL) global.log.info(chalk.yellow('getChannelSubscribersOldAPI() ') + 'start')
-          const value = await Promise.race([
-            this.getChannelSubscribersOldAPI(this.timeouts['getChannelSubscribersOldAPI'].opts),
-            this.timeoutAfterMs(10000)
-          ])
-          if (__DEBUG__.INTERVAL) global.log.info(chalk.yellow('getChannelSubscribersOldAPI() ') + JSON.stringify(value))
-
-          if (value.disable) return
-          if (value.state) { // if is ok, update opts and run unlock after a while
-            if (typeof value.opts !== 'undefined') this.timeouts['getChannelSubscribersOldAPI'].opts = value.opts
-            setTimeout(() => {
-              this.timeouts['getChannelSubscribersOldAPI'].isRunning = false
-            }, constants.MINUTE * 2)
-          } else { // else run next tick
-            this.timeouts['getChannelSubscribersOldAPI'].isRunning = false
-          }
-        }
-      }, 1000)
-
-      setInterval(async () => {
-        if (typeof this.timeouts['getChannelDataOldAPI'] === 'undefined') this.timeouts['getChannelDataOldAPI'] = { opts: { forceUpdate: true }, isRunning: false }
-
-        if (!this.timeouts['getChannelDataOldAPI'].isRunning) {
-          this.timeouts['getChannelDataOldAPI'].isRunning = true
-          if (__DEBUG__.INTERVAL) global.log.info(chalk.yellow('getChannelDataOldAPI() ') + 'start')
-          const value = await Promise.race([
-            this.getChannelDataOldAPI(this.timeouts['getChannelDataOldAPI'].opts),
-            this.timeoutAfterMs(10000)
-          ])
-          if (__DEBUG__.INTERVAL) global.log.info(chalk.yellow('getChannelDataOldAPI() ') + JSON.stringify(value))
-
-          if (value.state) { // if is ok, update opts and run unlock after a while
-            if (typeof value.opts !== 'undefined') this.timeouts['getChannelDataOldAPI'].opts = value.opts
-            setTimeout(() => {
-              this.timeouts['getChannelDataOldAPI'].isRunning = false
-            }, 60000)
-          } else { // else run next tick
-            this.timeouts['getChannelDataOldAPI'].isRunning = false
-          }
-        }
-      }, 1000)
-
-      setInterval(async () => {
-        if (typeof this.timeouts['intervalFollowerUpdate'] === 'undefined') this.timeouts['intervalFollowerUpdate'] = { opts: {}, isRunning: false }
-
-        if (!this.timeouts['intervalFollowerUpdate'].isRunning) {
-          this.timeouts['intervalFollowerUpdate'].isRunning = true
-          if (__DEBUG__.INTERVAL) global.log.info(chalk.yellow('intervalFollowerUpdate() ') + 'start')
-          const value = await Promise.race([
-            this.intervalFollowerUpdate(this.timeouts['intervalFollowerUpdate'].opts),
-            this.timeoutAfterMs(10000)
-          ])
-          if (__DEBUG__.INTERVAL) global.log.info(chalk.yellow('intervalFollowerUpdate() ') + JSON.stringify(value))
-
-          if (value.state) { // if is ok, update opts and run unlock after a while
-            if (typeof value.opts !== 'undefined') this.timeouts['intervalFollowerUpdate'].opts = value.opts
-            setTimeout(() => {
-              this.timeouts['intervalFollowerUpdate'].isRunning = false
-            }, 60000)
-          } else { // else run next tick
-            this.timeouts['intervalFollowerUpdate'].isRunning = false
-          }
-        }
-      }, 1000)
-
-      setInterval(async () => {
-        if (typeof this.timeouts['checkClips'] === 'undefined') this.timeouts['checkClips'] = { opts: {}, isRunning: false }
-
-        if (!this.timeouts['checkClips'].isRunning) {
-          this.timeouts['checkClips'].isRunning = true
-          if (__DEBUG__.INTERVAL) global.log.info(chalk.yellow('checkClips() ') + 'start')
-          const value = await Promise.race([
-            this.checkClips(this.timeouts['checkClips'].opts),
-            this.timeoutAfterMs(10000)
-          ])
-          if (__DEBUG__.INTERVAL) global.log.info(chalk.yellow('checkClips() ') + JSON.stringify(value))
-
-          if (value.state) { // if is ok, update opts and run unlock after a while
-            if (typeof value.opts !== 'undefined') this.timeouts['checkClips'].opts = value.opts
-            setTimeout(() => {
-              this.timeouts['checkClips'].isRunning = false
-            }, 60000)
-          } else { // else run next tick
-            this.timeouts['checkClips'].isRunning = false
-          }
-        }
-      }, 1000)
+      this.interval('getCurrentStreamData', constants.MINUTE)
+      this.interval('updateChannelViews', constants.MINUTE)
+      this.interval('getLatest100Followers', constants.MINUTE)
+      this.interval('getChannelHosts', constants.MINUTE)
+      this.interval('getChannelSubscribers', 2 * constants.MINUTE)
+      this.interval('getChannelChattersUnofficialAPI', constants.MINUTE)
+      this.interval('getChannelDataOldAPI', constants.MINUTE)
+      this.interval('intervalFollowerUpdate', constants.MINUTE)
+      this.interval('checkClips', constants.MINUTE)
     } else {
       this.calls = {
         bot: {
@@ -330,8 +133,34 @@ class API {
     this.calls[type].reset = reset
   }
 
+  async interval (fnc, interval) {
+    setInterval(async () => {
+      if (typeof this.timeouts[fnc] === 'undefined') this.timeouts[fnc] = { opts: {}, isRunning: false }
+
+      if (!this.timeouts[fnc].isRunning) {
+        this.timeouts[fnc].isRunning = true
+        if (__DEBUG__.INTERVAL) global.log.info(chalk.yellow(fnc + '() ') + 'start')
+        const value = await Promise.race([
+          this[fnc](this.timeouts[fnc].opts),
+          this.timeoutAfterMs(10000)
+        ])
+        if (__DEBUG__.INTERVAL) global.log.info(chalk.yellow(fnc + '() ') + JSON.stringify(value))
+
+        if (value.disable) return
+        if (value.state) { // if is ok, update opts and run unlock after a while
+          if (typeof value.opts !== 'undefined') this.timeouts[fnc].opts = value.opts
+          setTimeout(() => {
+            this.timeouts[fnc].isRunning = false
+          }, interval)
+        } else { // else run next tick
+          this.timeouts[fnc].isRunning = false
+        }
+      }
+    }, 1000)
+  }
+
   async intervalFollowerUpdate () {
-    if (cluster.isWorker) throw new Error('API can run only on master')
+    if (!isMainThread) throw new Error('API can run only on master')
 
     for (let username of this.rate_limit_follower_check) {
       const user = await global.users.getByName(username)
@@ -394,17 +223,17 @@ class API {
       this.calls.bot.remaining = request.headers['ratelimit-remaining']
       // $FlowFixMe error with flow on request.headers
       this.calls.bot.refresh = request.headers['ratelimit-reset']
-      global.commons.processAll({ ns: 'api', fnc: 'setRateLimit', args: [ 'bot', request.headers['ratelimit-limit'], request.headers['ratelimit-remaining'], request.headers['ratelimit-reset'] ] })
+      global.workers.sendToAll({ ns: 'api', fnc: 'setRateLimit', args: [ 'bot', request.headers['ratelimit-limit'], request.headers['ratelimit-remaining'], request.headers['ratelimit-reset'] ] })
 
       if (global.panel && global.panel.io) global.panel.io.emit('api.stats', { data: request.data, timestamp: _.now(), call: 'getUsernameFromTwitch', api: 'helix', endpoint: url, code: request.status, remaining: this.calls.bot.remaining })
       return request.data.data[0].login
     } catch (e) {
       if (typeof e.response !== 'undefined' && e.response.status === 429) {
-        global.commons.processAll({ ns: 'api', fnc: 'setRateLimit', args: [ 'bot', 120, 0, e.response.headers['ratelimit-reset'] ] })
+        global.workers.sendToAll({ ns: 'api', fnc: 'setRateLimit', args: [ 'bot', 120, 0, e.response.headers['ratelimit-reset'] ] })
         this.calls.bot.remaining = 0
         this.calls.bot.refresh = e.response.headers['ratelimit-reset']
       }
-      if (global.panel && global.panel.io) global.panel.io.emit('api.stats', { data: {}, timestamp: _.now(), call: 'getUsernameFromTwitch', api: 'helix', endpoint: url, code: e.stack, remaining: this.calls.bot.remaining })
+      if (global.panel && global.panel.io) global.panel.io.emit('api.stats', { timestamp: _.now(), call: 'getUsernameFromTwitch', api: 'helix', endpoint: url, code: e.response.status, data: e.stack, remaining: this.calls.bot.remaining })
     }
     return null
   }
@@ -429,7 +258,7 @@ class API {
       }
     */
 
-    const token = await global.oauth.settings.bot.accessToken
+    const token = global.oauth.settings.bot.accessToken
     const needToWait = token === ''
     const notEnoughAPICalls = global.api.calls.bot.remaining <= 30 && global.api.calls.bot.refresh > _.now() / 1000
     if ((needToWait || notEnoughAPICalls) && !isChannelId) {
@@ -450,24 +279,26 @@ class API {
       this.calls.bot.remaining = request.headers['ratelimit-remaining']
       // $FlowFixMe error with flow on request.headers
       this.calls.bot.refresh = request.headers['ratelimit-reset']
-      global.commons.processAll({ ns: 'api', fnc: 'setRateLimit', args: [ 'bot', request.headers['ratelimit-limit'], request.headers['ratelimit-remaining'], request.headers['ratelimit-reset'] ] })
+      global.workers.sendToAll({ ns: 'api', fnc: 'setRateLimit', args: [ 'bot', request.headers['ratelimit-limit'], request.headers['ratelimit-remaining'], request.headers['ratelimit-reset'] ] })
 
       if (global.panel && global.panel.io) global.panel.io.emit('api.stats', { data: request.data, timestamp: _.now(), call: 'getIdFromTwitch', api: 'helix', endpoint: url, code: request.status, remaining: this.calls.bot.remaining })
 
       return request.data.data[0].id
     } catch (e) {
       if (typeof e.response !== 'undefined' && e.response.status === 429) {
-        global.commons.processAll({ ns: 'api', fnc: 'setRateLimit', args: [ 'bot', 120, 0, e.response.headers['ratelimit-reset'] ] })
+        global.workers.sendToAll({ ns: 'api', fnc: 'setRateLimit', args: [ 'bot', 120, 0, e.response.headers['ratelimit-reset'] ] })
         this.calls.bot.remaining = 0
         this.calls.bot.refresh = e.response.headers['ratelimit-reset']
+        if (global.panel && global.panel.io) global.panel.io.emit('api.stats', { timestamp: _.now(), call: 'getIdFromTwitch', api: 'helix', endpoint: url, code: e.response.status, data: e.stack, remaining: this.calls.bot.remaining })
+      } else {
+        if (global.panel && global.panel.io) global.panel.io.emit('api.stats', { timestamp: _.now(), call: 'getIdFromTwitch', api: 'helix', endpoint: url, code: 'n/a', data: e.stack, remaining: this.calls.bot.remaining })
       }
-      if (global.panel && global.panel.io) global.panel.io.emit('api.stats', { data: {}, timestamp: _.now(), call: 'getIdFromTwitch', api: 'helix', endpoint: url, code: e.stack, remaining: this.calls.bot.remaining })
     }
     return null
   }
 
   async getChannelChattersUnofficialAPI (opts) {
-    if (cluster.isWorker) throw new Error('API can run only on master')
+    if (!isMainThread) throw new Error('API can run only on master')
 
     const sendJoinEvent = async function (bulk) {
       for (let user of bulk) {
@@ -495,15 +326,20 @@ class API {
       if (global.panel && global.panel.io) global.panel.io.emit('api.stats', { data: request.data, timestamp: _.now(), call: 'getChannelChattersUnofficialAPI', api: 'unofficial', endpoint: url, code: request.status })
       opts.saveToWidget = true
     } catch (e) {
-      if (global.panel && global.panel.io) global.panel.io.emit('api.stats', { timestamp: _.now(), call: 'getChannelChattersUnofficialAPI', api: 'unofficial', endpoint: url, code: e.stack })
+      if (global.panel && global.panel.io) global.panel.io.emit('api.stats', { timestamp: _.now(), call: 'getChannelChattersUnofficialAPI', api: 'unofficial', endpoint: url, code: e.response.status, data: e.stack })
       return { state: false, opts }
     }
 
+    if (typeof request.data.chatters === 'undefined') {
+      return { state: true };
+    }
+
     const chatters = _.flatMap(request.data.chatters)
+    this.setModerators(request.data.chatters.moderators);
 
     let bulkInsert = []
     let bulkParted = []
-    let allOnlineUsers = (await global.db.engine.find('users.online')).map((o) => o.username)
+    let allOnlineUsers = await global.users.getAllOnlineUsernames()
     let ignoredUsers = global.commons.getIgnoreList()
 
     for (let user of allOnlineUsers) {
@@ -541,21 +377,21 @@ class API {
     return { state: true, opts }
   }
 
-  async getChannelSubscribersOldAPI (opts) {
-    if (cluster.isWorker) throw new Error('API can run only on master')
-
+  async getChannelSubscribers (opts) {
+    if (!isMainThread) throw new Error('API can run only on master')
     opts = opts || {}
-    opts.subscribers = opts.subscribers || []
-    opts.offset = opts.offset || 0
-    const subscribers = Array.from(opts.subscribers)
-    const limit = 100
 
     const cid = global.oauth.channelId
-    const url = `https://api.twitch.tv/kraken/channels/${cid}/subscriptions?limit=${limit}&offset=${opts.offset}`
+    let url = `https://api.twitch.tv/helix/subscriptions?broadcaster_id=${cid}&first=100`
+    if (opts.cursor) url += '&after=' + opts.cursor
+    if (typeof opts.count === 'undefined') opts.count = -1 // start at -1 because owner is subbed as well
 
-    const token = await global.oauth.settings.broadcaster.accessToken
+
+    const token = global.oauth.settings.broadcaster.accessToken
     const needToWait = _.isNil(cid) || cid === '' || _.isNil(global.overlays) || token === ''
-    if (needToWait) {
+    const notEnoughAPICalls = this.calls.bot.remaining <= 30 && this.calls.bot.refresh > _.now() / 1000
+
+    if (needToWait || notEnoughAPICalls) {
       return { state: false }
     }
 
@@ -564,34 +400,35 @@ class API {
     try {
       request = await axios.get(url, {
         headers: {
-          'Accept': 'application/vnd.twitchtv.v5+json',
-          'Authorization': 'OAuth ' + token
+          'Authorization': 'Bearer ' + token
         }
       })
-      if (global.panel && global.panel.io) global.panel.io.emit('api.stats', { data: request.data, timestamp: _.now(), call: 'getChannelSubscribersOldAPI', api: 'kraken', endpoint: url, code: request.status })
+      this.retries.getChannelSubscribers = 0 // reset retry
+      const subscribers = request.data.data
 
-      this.retries.getChannelSubscribersOldAPI = 0 // reset retry
+      if (global.panel && global.panel.io) global.panel.io.emit('api.stats', { data: subscribers, timestamp: _.now(), call: 'getChannelSubscribers', api: 'helix', endpoint: url, code: request.status, remaining: this.calls.bot.remaining })
 
-      // set subscribers
-      for (let subscriber of _.map(request.data.subscriptions, 'user')) {
-        if (subscriber.name === global.commons.getBroadcaster() || subscriber.name === global.oauth.settings.bot.username) continue
-        opts.subscribers.push(subscriber._id)
-      }
+      // save remaining api calls
+      this.calls.bot.remaining = request.headers['ratelimit-remaining']
+      this.calls.bot.refresh = request.headers['ratelimit-reset']
+      this.calls.bot.limit = request.headers['ratelimit-limit']
+      global.workers.sendToAll({ ns: 'api', fnc: 'setRateLimit', args: [ 'bot', request.headers['ratelimit-limit'], request.headers['ratelimit-remaining'], request.headers['ratelimit-reset'] ] })
 
-      if (subscribers.length === opts.subscribers.length) {
-        await global.db.engine.update('api.current', { key: 'subscribers' }, { value: request.data._total - 1 })
-        this.setSubscribers(subscribers)
+      this.setSubscribers(subscribers.filter(o => {
+        return !global.commons.isOwner(o.user_name)  && !global.commons.isBot(o.user_name)
+      }))
+      if (subscribers.length === 100) {
+        // move to next page
+        this.getChannelSubscribers({ cursor: request.data.pagination.cursor, count: subscribers.length + opts.count })
       } else {
-        opts.offset = opts.offset + limit
-        this.getChannelSubscribersOldAPI(opts)
+        await global.db.engine.update('api.current', { key: 'subscribers' }, { value: subscribers.length + opts.count })
       }
-
     } catch (e) {
       const isChannelPartnerOrAffiliate =
         !(e.message !== '422 Unprocessable Entity' ||
          (e.response.data.status === 400 && e.response.data.message === `${global.commons.getBroadcaster} does not have a subscription program`))
       if (!isChannelPartnerOrAffiliate) {
-        if (this.retries.getChannelSubscribersOldAPI >= 15) {
+        if (this.retries.getChannelSubscribers >= 15) {
           disable = true
           global.log.warning('Broadcaster is not affiliate/partner, will not check subs')
           global.db.engine.update('api.current', { key: 'subscribers' }, { value: 0 })
@@ -603,10 +440,44 @@ class API {
         global.db.engine.update('api.current', { key: 'subscribers' }, { value: 0 })
       } else {
         global.log.error(`${url} - ${e.message}`)
-        if (global.panel && global.panel.io) global.panel.io.emit('api.stats', { timestamp: _.now(), call: 'getChannelSubscribersOldAPI', api: 'kraken', endpoint: url, code: e.stack })
+        if (global.panel && global.panel.io) global.panel.io.emit('api.stats', { timestamp: _.now(), call: 'getChannelSubscribers', api: 'helix', endpoint: url, code: e.response.status, data: e.stack, remaining: this.calls.bot.remaining })
       }
     }
     return { state: true, disable }
+  }
+
+  // mods is set of usernames
+  async setModerators (mods) {
+    const currentModerators = await global.db.engine.find('users', { is: { moderator: true } })
+
+    // check if current moderators are still mods
+    for (let user of currentModerators) {
+      if (!mods.includes(user.username)) {
+        // mod is not mod anymore
+        if (!user.id) {
+          global.log.warning('users collection data _id ' + user._id + ' might be corrupted - missing id?')
+        } else {
+          await global.db.engine.update('users', { id: user.id }, { username: user.username, is: { moderator: false } })
+        }
+      }
+
+      // remove username if parsed
+      const idx = mods.indexOf(user.username);
+      if (idx > -1) {
+        mods.splice(idx, 1);
+      }
+    }
+
+    // set rest users as mods
+    for (let username of mods) {
+      if (global.commons.isBot(username)) { global.status.MOD = true; }
+      else {
+        const id = await global.users.getIdByName(username.toLowerCase(), true)
+        if (id) {
+          await global.db.engine.update('users', { id }, { is: { moderator: true }, username })
+        }
+      }
+    }
   }
 
   async setSubscribers (subscribers) {
@@ -615,19 +486,21 @@ class API {
     // check if current subscribers are still subs
     for (let user of currentSubscribers) {
       if (typeof user.lock === 'undefined' || (typeof user.lock !== 'undefined' && !user.lock.subscriber)) {
-        await global.db.engine.update('users', { id: user.id }, { is: { subscriber: subscribers.includes(user.id) } })
+        if (!subscribers.map((o) => o.user_id).includes(user.id)) {
+          // subscriber is not sub anymore -> unsub and set subStreak to 0
+          await global.db.engine.update('users', { id: user.id }, {  is: { subscriber: false }, stats: { subStreak: 0 } })
+        }
       }
 
       // remove id if parsed
-      const idx = subscribers.indexOf(user.id);
-      if (idx > -1) {
-        subscribers.splice(idx, 1);
-      }
+      subscribers = subscribers.filter((o) => {
+        return o.user_id !== user.id
+      })
     }
 
     // set rest users as subs
-    for (let id of subscribers) {
-      await global.db.engine.update('users', { id }, { is: { subscriber: true }})
+    for (let user of subscribers) {
+      await global.db.engine.update('users', { id: user.user_id }, { username: user.user_name, is: { subscriber: true }, stats: { tier: user.tier / 1000 } })
     }
 
     // update all subscribed_at
@@ -640,7 +513,7 @@ class API {
   }
 
   async getChannelDataOldAPI (opts) {
-    if (cluster.isWorker) throw new Error('API can run only on master')
+    if (!isMainThread) throw new Error('API can run only on master')
 
     const cid = global.oauth.channelId
     const url = `https://api.twitch.tv/kraken/channels/${cid}`
@@ -673,7 +546,7 @@ class API {
             await global.cache.rawStatus(request.data.status)
           } else {
             this.retries.getChannelDataOldAPI++
-            return
+            return { state: false, opts }
           }
         } else {
           this.retries.getChannelDataOldAPI = 0
@@ -688,7 +561,7 @@ class API {
       }
     } catch (e) {
       global.log.error(`${url} - ${e.message}`)
-      if (global.panel && global.panel.io) global.panel.io.emit('api.stats', { timestamp: _.now(), call: 'getChannelDataOldAPI', api: 'kraken', endpoint: url, code: e.stack })
+      if (global.panel && global.panel.io) global.panel.io.emit('api.stats', { timestamp: _.now(), call: 'getChannelDataOldAPI', api: 'kraken', endpoint: url, code: e.response.status, data: e.stack })
       return { state: false, opts }
     }
 
@@ -696,7 +569,7 @@ class API {
   }
 
   async getChannelHosts () {
-    if (cluster.isWorker) throw new Error('API can run only on master')
+    if (!isMainThread) throw new Error('API can run only on master')
 
     const cid = global.oauth.channelId
 
@@ -718,8 +591,8 @@ class API {
       }
     } catch (e) {
       global.log.error(`${url} - ${e.message}`)
-      if (global.panel && global.panel.io) global.panel.io.emit('api.stats', { timestamp: _.now(), call: 'getChannelHosts', api: 'tmi', endpoint: url, code: e.stack })
-      return { state: false }
+      if (global.panel && global.panel.io) global.panel.io.emit('api.stats', { timestamp: _.now(), call: 'getChannelHosts', api: 'tmi', endpoint: url, code: e.response.status, data: e.stack })
+      return { state: e.response.status === 500 }
     }
     return { state: true }
   }
@@ -748,18 +621,18 @@ class API {
       this.calls.bot.remaining = request.headers['ratelimit-remaining']
       this.calls.bot.refresh = request.headers['ratelimit-reset']
       this.calls.bot.limit = request.headers['ratelimit-limit']
-      global.commons.processAll({ ns: 'api', fnc: 'setRateLimit', args: [ 'bot', request.headers['ratelimit-limit'], request.headers['ratelimit-remaining'], request.headers['ratelimit-reset'] ] })
+      global.workers.sendToAll({ ns: 'api', fnc: 'setRateLimit', args: [ 'bot', request.headers['ratelimit-limit'], request.headers['ratelimit-remaining'], request.headers['ratelimit-reset'] ] })
 
       if (request.data.data.length > 0) await global.db.engine.update('api.current', { key: 'views' }, { value: request.data.data[0].view_count })
     } catch (e) {
       if (typeof e.response !== 'undefined' && e.response.status === 429) {
-        global.commons.processAll({ ns: 'api', fnc: 'setRateLimit', args: [ 'bot', 120, 0, e.response.headers['ratelimit-reset'] ] })
+        global.workers.sendToAll({ ns: 'api', fnc: 'setRateLimit', args: [ 'bot', 120, 0, e.response.headers['ratelimit-reset'] ] })
         this.calls.bot.remaining = 0
         this.calls.bot.refresh = e.response.headers['ratelimit-reset']
       }
 
       global.log.error(`${url} - ${e.message}`)
-      if (global.panel && global.panel.io) global.panel.io.emit('api.stats', { timestamp: _.now(), call: 'updateChannelViews', api: 'helix', endpoint: url, code: e.stack, remaining: this.calls.bot.remaining })
+      if (global.panel && global.panel.io) global.panel.io.emit('api.stats', { timestamp: _.now(), call: 'updateChannelViews', api: 'helix', endpoint: url, code: e.response.status, data: e.stack, remaining: this.calls.bot.remaining })
     }
     return { state: true }
   }
@@ -787,7 +660,7 @@ class API {
       this.calls.bot.remaining = request.headers['ratelimit-remaining']
       this.calls.bot.refresh = request.headers['ratelimit-reset']
       this.calls.bot.limit = request.headers['ratelimit-limit']
-      global.commons.processAll({ ns: 'api', fnc: 'setRateLimit', args: [ 'bot', request.headers['ratelimit-limit'], request.headers['ratelimit-remaining'], request.headers['ratelimit-reset'] ] })
+      global.workers.sendToAll({ ns: 'api', fnc: 'setRateLimit', args: [ 'bot', request.headers['ratelimit-limit'], request.headers['ratelimit-remaining'], request.headers['ratelimit-reset'] ] })
 
       if (global.panel && global.panel.io) global.panel.io.emit('api.stats', { data: request.data, timestamp: _.now(), call: 'getLatest100Followers', api: 'helix', endpoint: url, code: request.status, remaining: this.calls.bot.remaining })
 
@@ -807,7 +680,7 @@ class API {
                   type: 'follow',
                   username: user.username
                 })
-                if (!quiet && !await global.commons.isBot(user.username)) {
+                if (!quiet && !(await global.commons.isBot(user.username))) {
                   global.log.follow(user.username)
                   global.events.fire('follow', { username: user.username })
 
@@ -847,14 +720,14 @@ class API {
       quiet = false
     } catch (e) {
       if (typeof e.response !== 'undefined' && e.response.status === 429) {
-        global.commons.processAll({ ns: 'api', fnc: 'setRateLimit', args: [ 'bot', 120, 0, e.response.headers['ratelimit-reset'] ] })
+        global.workers.sendToAll({ ns: 'api', fnc: 'setRateLimit', args: [ 'bot', 120, 0, e.response.headers['ratelimit-reset'] ] })
         this.calls.bot.remaining = 0
         this.calls.bot.refresh = e.response.headers['ratelimit-reset']
       }
 
       quiet = e.errno !== 'ECONNREFUSED' && e.errno !== 'ETIMEDOUT'
       global.log.error(`${url} - ${e.message}`)
-      if (global.panel && global.panel.io) global.panel.io.emit('api.stats', { timestamp: _.now(), call: 'getLatest100Followers', api: 'helix', endpoint: url, code: e.stack, remaining: this.calls.bot.remaining })
+      if (global.panel && global.panel.io) global.panel.io.emit('api.stats', { timestamp: _.now(), call: 'getLatest100Followers', api: 'helix', endpoint: url, code: e.response.status, data: e.stack, remaining: this.calls.bot.remaining })
       return { state: false, opts: quiet }
     }
     return { state: true, opts: quiet }
@@ -884,9 +757,9 @@ class API {
       this.calls.bot.remaining = request.headers['ratelimit-remaining']
       this.calls.bot.refresh = request.headers['ratelimit-reset']
       this.calls.bot.limit = request.headers['ratelimit-limit']
-      global.commons.processAll({ ns: 'api', fnc: 'setRateLimit', args: [ 'bot', request.headers['ratelimit-limit'], request.headers['ratelimit-remaining'], request.headers['ratelimit-reset'] ] })
+      global.workers.sendToAll({ ns: 'api', fnc: 'setRateLimit', args: [ 'bot', request.headers['ratelimit-limit'], request.headers['ratelimit-remaining'], request.headers['ratelimit-reset'] ] })
 
-      if (cluster.isMaster) if (global.panel && global.panel.io) global.panel.io.emit('api.stats', { data: request.data, timestamp: _.now(), call: 'getGameFromId', api: 'helix', endpoint: url, code: request.status, remaining: this.calls.bot.remaining })
+      if (isMainThread) if (global.panel && global.panel.io) global.panel.io.emit('api.stats', { data: request.data, timestamp: _.now(), call: 'getGameFromId', api: 'helix', endpoint: url, code: request.status, remaining: this.calls.bot.remaining })
 
       // add id->game to cache
       const name = request.data.data[0].name
@@ -894,7 +767,7 @@ class API {
       return name
     } catch (e) {
       if (typeof e.response !== 'undefined' && e.response.status === 429) {
-        global.commons.processAll({ ns: 'api', fnc: 'setRateLimit', args: [ 'bot', 120, 0, e.response.headers['ratelimit-reset'] ] })
+        global.workers.sendToAll({ ns: 'api', fnc: 'setRateLimit', args: [ 'bot', 120, 0, e.response.headers['ratelimit-reset'] ] })
         this.calls.bot.remaining = 0
         this.calls.bot.refresh = e.response.headers['ratelimit-reset']
       }
@@ -902,13 +775,13 @@ class API {
       const game = await global.db.engine.findOne('api.current', { key: 'game' })
       global.log.warning(`Couldn't find name of game for gid ${id} - fallback to ${game.value}`)
       global.log.error(`API: ${url} - ${e.stack}`)
-      if (cluster.isMaster) if (global.panel && global.panel.io) global.panel.io.emit('api.stats', { timestamp: _.now(), call: 'getGameFromId', api: 'helix', endpoint: url, code: e.stack, remaining: this.calls.bot.remaining })
+      if (isMainThread) if (global.panel && global.panel.io) global.panel.io.emit('api.stats', { timestamp: _.now(), call: 'getGameFromId', api: 'helix', endpoint: url, code: e.response.status, data: e.stack, remaining: this.calls.bot.remaining })
       return game.value
     }
   }
 
   async getCurrentStreamData (opts) {
-    if (cluster.isWorker) throw new Error('API can run only on master')
+    if (!isMainThread) throw new Error('API can run only on master')
 
     const cid = global.oauth.channelId
     const url = `https://api.twitch.tv/helix/streams?user_id=${cid}`
@@ -932,7 +805,7 @@ class API {
       this.calls.bot.remaining = request.headers['ratelimit-remaining']
       this.calls.bot.refresh = request.headers['ratelimit-reset']
       this.calls.bot.limit = request.headers['ratelimit-limit']
-      global.commons.processAll({ ns: 'api', fnc: 'setRateLimit', args: [ 'bot', request.headers['ratelimit-limit'], request.headers['ratelimit-remaining'], request.headers['ratelimit-reset'] ] })
+      global.workers.sendToAll({ ns: 'api', fnc: 'setRateLimit', args: [ 'bot', request.headers['ratelimit-limit'], request.headers['ratelimit-remaining'], request.headers['ratelimit-reset'] ] })
 
       if (global.panel && global.panel.io) global.panel.io.emit('api.stats', { data: request.data, timestamp: _.now(), call: 'getCurrentStreamData', api: 'helix', endpoint: url, code: request.status, remaining: this.calls.bot.remaining })
 
@@ -947,7 +820,7 @@ class API {
         let stream = request.data.data[0]
 
         if (!moment.preciseDiff(moment(stream.started_at), moment((await global.cache.when()).online), true).firstDateWasLater) await global.cache.when({ online: stream.started_at })
-        if (!await global.cache.isOnline() || this.streamType !== stream.type) {
+        if (!(await global.cache.isOnline()) || this.streamType !== stream.type) {
           this.chatMessagesAtStart = global.linesParsed
 
           if (!global.webhooks.enabled.streams && Number(this.streamId) !== Number(stream.id)) {
@@ -963,7 +836,7 @@ class API {
             global.events.fire('every-x-minutes-of-stream', { reset: true })
             justStarted = true
 
-            // go through all systems and trigger on.streamEnd
+            // go through all systems and trigger on.streamStart
             for (let [type, systems] of Object.entries({
               systems: global.systems,
               games: global.games,
@@ -1070,20 +943,20 @@ class API {
       }
     } catch (e) {
       if (typeof e.response !== 'undefined' && e.response.status === 429) {
-        global.commons.processAll({ ns: 'api', fnc: 'setRateLimit', args: [ 'bot', 120, 0, e.response.headers['ratelimit-reset'] ] })
+        global.workers.sendToAll({ ns: 'api', fnc: 'setRateLimit', args: [ 'bot', 120, 0, e.response.headers['ratelimit-reset'] ] })
         this.calls.bot.remaining = 0
         this.calls.bot.refresh = e.response.headers['ratelimit-reset']
       }
 
       global.log.error(`${url} - ${e.message}`)
-      if (global.panel && global.panel.io) global.panel.io.emit('api.stats', { timestamp: _.now(), call: 'getCurrentStreamData', api: 'helix', endpoint: url, code: e.stack, remaining: this.calls.bot.remaining })
+      if (global.panel && global.panel.io) global.panel.io.emit('api.stats', { timestamp: _.now(), call: 'getCurrentStreamData', api: 'helix', endpoint: url, code: e.response.status, data: e.stack, remaining: this.calls.bot.remaining })
       return { state: false, opts }
     }
     return { state: true, opts }
   }
 
   async saveStreamData (stream) {
-    if (cluster.isWorker) throw new Error('API can run only on master')
+    if (!isMainThread) throw new Error('API can run only on master')
     await global.db.engine.update('api.current', { key: 'viewers' }, { value: stream.viewer_count })
 
     let maxViewers = await global.db.engine.findOne('api.max', { key: 'viewers' })
@@ -1135,7 +1008,7 @@ class API {
   }
 
   async setTitleAndGame (sender, args) {
-    if (cluster.isWorker) throw new Error('API can run only on master')
+    if (!isMainThread) throw new Error('API can run only on master')
 
     args = _.defaults(args, { title: null }, { game: null })
     const cid = global.oauth.channelId
@@ -1178,9 +1051,9 @@ class API {
       })
       if (global.panel && global.panel.io) global.panel.io.emit('api.stats', { data: request.data, timestamp: _.now(), call: 'setTitleAndGame', api: 'kraken', endpoint: url, code: request.status })
     } catch (e) {
-      global.log.error(`API: ${url} - ${e.stack}`)
-      if (global.panel && global.panel.io) global.panel.io.emit('api.stats', { timestamp: _.now(), call: 'setTitleAndGame', api: 'kraken', endpoint: url, code: e.stack })
-      return
+      global.log.error(`API: ${url} - ${e.message}`)
+      if (global.panel && global.panel.io) global.panel.io.emit('api.stats', { timestamp: _.now(), call: 'setTitleAndGame', api: 'kraken', endpoint: url, code: e.response.status, data: e.stack })
+      return false
     }
 
     if (request.status === 200 && !_.isNil(request.data)) {
@@ -1212,11 +1085,12 @@ class API {
         }
       }
       this.gameOrTitleChangedManually = true
+      return true;
     }
   }
 
   async sendGameFromTwitch (self, socket, game) {
-    if (cluster.isWorker) throw new Error('API can run only on master')
+    if (!isMainThread) throw new Error('API can run only on master')
     const url = `https://api.twitch.tv/kraken/search/games?query=${encodeURIComponent(game)}&type=suggest`
 
     const token = await global.oauth.settings.bot.accessToken
@@ -1233,7 +1107,7 @@ class API {
       if (global.panel && global.panel.io) global.panel.io.emit('api.stats', { data: request.data, timestamp: _.now(), call: 'sendGameFromTwitch', api: 'kraken', endpoint: url, code: request.status })
     } catch (e) {
       global.log.error(`API: ${url} - ${e.stack}`)
-      if (global.panel && global.panel.io) global.panel.io.emit('api.stats', { timestamp: _.now(), call: 'sendGameFromTwitch', api: 'kraken', endpoint: url, code: e.stack })
+      if (global.panel && global.panel.io) global.panel.io.emit('api.stats', { timestamp: _.now(), call: 'sendGameFromTwitch', api: 'kraken', endpoint: url, code: e.response.status, data: e.stack })
       return
     }
 
@@ -1247,7 +1121,7 @@ class API {
   }
 
   async checkClips () {
-    if (cluster.isWorker) throw new Error('API can run only on master')
+    if (!isMainThread) throw new Error('API can run only on master')
 
     const token = global.oauth.settings.bot.accessToken
     if (token === '') {
@@ -1284,7 +1158,7 @@ class API {
       this.calls.bot.remaining = request.headers['ratelimit-remaining']
       this.calls.bot.refresh = request.headers['ratelimit-reset']
       this.calls.bot.limit = request.headers['ratelimit-limit']
-      global.commons.processAll({ ns: 'api', fnc: 'setRateLimit', args: [ 'bot', request.headers['ratelimit-limit'], request.headers['ratelimit-remaining'], request.headers['ratelimit-reset'] ] })
+      global.workers.sendToAll({ ns: 'api', fnc: 'setRateLimit', args: [ 'bot', request.headers['ratelimit-limit'], request.headers['ratelimit-remaining'], request.headers['ratelimit-reset'] ] })
 
       if (global.panel && global.panel.io) global.panel.io.emit('api.stats', { data: request.data, timestamp: _.now(), call: 'checkClips', api: 'helix', endpoint: url, code: request.status, remaining: this.calls.bot.remaining })
 
@@ -1294,19 +1168,19 @@ class API {
       }
     } catch (e) {
       if (typeof e.response !== 'undefined' && e.response.status === 429) {
-        global.commons.processAll({ ns: 'api', fnc: 'setRateLimit', args: [ 'bot', 120, 0, e.response.headers['ratelimit-reset'] ] })
+        global.workers.sendToAll({ ns: 'api', fnc: 'setRateLimit', args: [ 'bot', 120, 0, e.response.headers['ratelimit-reset'] ] })
         this.calls.bot.remaining = 0
         this.calls.bot.refresh = e.response.headers['ratelimit-reset']
       }
 
       global.log.error(`API: ${url} - ${e.stack}`)
-      if (global.panel && global.panel.io) global.panel.io.emit('api.stats', { timestamp: _.now(), call: 'checkClips', api: 'helix', endpoint: url, code: e.stack })
+      if (global.panel && global.panel.io) global.panel.io.emit('api.stats', { timestamp: _.now(), call: 'checkClips', api: 'helix', endpoint: url, code: e.response.status, data: e.stack })
     }
     return { state: true }
   }
 
   async createClip (opts) {
-    if (cluster.isWorker) throw new Error('API can run only on master')
+    if (!isMainThread) throw new Error('API can run only on master')
 
     if (!(await global.cache.isOnline())) return // do nothing if stream is offline
 
@@ -1350,18 +1224,18 @@ class API {
       this.calls.bot.remaining = request.headers['ratelimit-remaining']
       this.calls.bot.refresh = request.headers['ratelimit-reset']
       this.calls.bot.limit = request.headers['ratelimit-limit']
-      global.commons.processAll({ ns: 'api', fnc: 'setRateLimit', args: [ 'bot', request.headers['ratelimit-limit'], request.headers['ratelimit-remaining'], request.headers['ratelimit-reset'] ] })
+      global.workers.sendToAll({ ns: 'api', fnc: 'setRateLimit', args: [ 'bot', request.headers['ratelimit-limit'], request.headers['ratelimit-remaining'], request.headers['ratelimit-reset'] ] })
 
       if (global.panel && global.panel.io) global.panel.io.emit('api.stats', { data: request.data, timestamp: _.now(), call: 'createClip', api: 'helix', endpoint: url, code: request.status, remaining: this.calls.bot.remaining })
     } catch (e) {
       if (typeof e.response !== 'undefined' && e.response.status === 429) {
-        global.commons.processAll({ ns: 'api', fnc: 'setRateLimit', args: [ 'bot', 120, 0, e.response.headers['ratelimit-reset'] ] })
+        global.workers.sendToAll({ ns: 'api', fnc: 'setRateLimit', args: [ 'bot', 120, 0, e.response.headers['ratelimit-reset'] ] })
         this.calls.bot.remaining = 0
         this.calls.bot.refresh = e.response.headers['ratelimit-reset']
       }
 
       global.log.error(`API: ${url} - ${e.stack}`)
-      if (global.panel && global.panel.io) global.panel.io.emit('api.stats', { timestamp: _.now(), call: 'createClip', api: 'helix', endpoint: url, code: e.stack })
+      if (global.panel && global.panel.io) global.panel.io.emit('api.stats', { timestamp: _.now(), call: 'createClip', api: 'helix', endpoint: url, code: e.response.status, data: e.stack })
       return
     }
     const clipId = request.data.data[0].id
@@ -1371,7 +1245,7 @@ class API {
   }
 
   async fetchAccountAge (username, id) {
-    if (cluster.isWorker) throw new Error('API can run only on master')
+    if (!isMainThread) throw new Error('API can run only on master')
     const url = `https://api.twitch.tv/kraken/users/${id}`
 
     const token = await global.oauth.settings.bot.accessToken
@@ -1398,7 +1272,7 @@ class API {
 
       if (logError) {
         global.log.error(`API: ${url} - ${e.stack}`)
-        if (global.panel && global.panel.io) global.panel.io.emit('api.stats', { timestamp: _.now(), call: 'fetchAccountAge', api: 'kraken', endpoint: url, code: e.stack })
+        if (global.panel && global.panel.io) global.panel.io.emit('api.stats', { timestamp: _.now(), call: 'fetchAccountAge', api: 'kraken', endpoint: url, code: e.response.status, data: e.stack })
       }
       return
     }
@@ -1410,7 +1284,7 @@ class API {
   }
 
   async isFollowerUpdate (user) {
-    if (cluster.isWorker) throw new Error('API can run only on master')
+    if (!isMainThread) throw new Error('API can run only on master')
     if (!user.id) return
     clearTimeout(this.timeouts['isFollowerUpdate-' + user.id])
 
@@ -1437,18 +1311,18 @@ class API {
       this.calls.bot.remaining = request.headers['ratelimit-remaining']
       this.calls.bot.refresh = request.headers['ratelimit-reset']
       this.calls.bot.limit = request.headers['ratelimit-limit']
-      global.commons.processAll({ ns: 'api', fnc: 'setRateLimit', args: [ 'bot', request.headers['ratelimit-limit'], request.headers['ratelimit-remaining'], request.headers['ratelimit-reset'] ] })
+      global.workers.sendToAll({ ns: 'api', fnc: 'setRateLimit', args: [ 'bot', request.headers['ratelimit-limit'], request.headers['ratelimit-remaining'], request.headers['ratelimit-reset'] ] })
 
       if (global.panel && global.panel.io) global.panel.io.emit('api.stats', { data: request.data, timestamp: _.now(), call: 'isFollowerUpdate', api: 'helix', endpoint: url, code: request.status, remaining: this.calls.bot.remaining })
     } catch (e) {
       if (typeof e.response !== 'undefined' && e.response.status === 429) {
-        global.commons.processAll({ ns: 'api', fnc: 'setRateLimit', args: [ 'bot', 120, 0, e.response.headers['ratelimit-reset'] ] })
+        global.workers.sendToAll({ ns: 'api', fnc: 'setRateLimit', args: [ 'bot', 120, 0, e.response.headers['ratelimit-reset'] ] })
         this.calls.bot.remaining = 0
         this.calls.bot.refresh = e.response.headers['ratelimit-reset']
       }
 
       global.log.error(`API: ${url} - ${e.stack}`)
-      if (global.panel && global.panel.io) global.panel.io.emit('api.stats', { timestamp: _.now(), call: 'isFollowerUpdate', api: 'helix', endpoint: url, code: e.stack, remaining: this.calls.bot.remaining })
+      if (global.panel && global.panel.io) global.panel.io.emit('api.stats', { timestamp: _.now(), call: 'isFollowerUpdate', api: 'helix', endpoint: url, code: e.response.status, data: e.stack, remaining: this.calls.bot.remaining })
       return
     }
 
@@ -1523,13 +1397,13 @@ class API {
       this.calls.bot.remaining = request.headers['ratelimit-remaining']
       this.calls.bot.refresh = request.headers['ratelimit-reset']
       this.calls.bot.limit = request.headers['ratelimit-limit']
-      global.commons.processAll({ ns: 'api', fnc: 'setRateLimit', args: [ 'bot', request.headers['ratelimit-limit'], request.headers['ratelimit-remaining'], request.headers['ratelimit-reset'] ] })
+      global.workers.sendToAll({ ns: 'api', fnc: 'setRateLimit', args: [ 'bot', request.headers['ratelimit-limit'], request.headers['ratelimit-remaining'], request.headers['ratelimit-reset'] ] })
 
       if (global.panel && global.panel.io) global.panel.io.emit('api.stats', { timestamp: _.now(), call: 'createMarker', api: 'helix', endpoint: url, code: request.status, remaining: this.calls.bot.remaining, data: request.data })
     } catch (e) {
       if (e.errno === 'ECONNRESET' || e.errno === 'ECONNREFUSED' || e.errno === 'ETIMEDOUT') return this.createMarker()
       global.log.error(`API: Marker was not created - ${e.message}`)
-      if (global.panel && global.panel.io) global.panel.io.emit('api.stats', { timestamp: _.now(), call: 'createMarker', api: 'helix', endpoint: url, code: e.stack, remaining: this.calls.bot.remaining })
+      if (global.panel && global.panel.io) global.panel.io.emit('api.stats', { timestamp: _.now(), call: 'createMarker', api: 'helix', endpoint: url, code: e.response.status, data: e.stack, remaining: this.calls.bot.remaining })
     }
   }
 
@@ -1590,7 +1464,7 @@ class API {
       this.calls.bot.remaining = request.headers['ratelimit-remaining']
       this.calls.bot.refresh = request.headers['ratelimit-reset']
       this.calls.bot.limit = request.headers['ratelimit-limit']
-      global.commons.processAll({ ns: 'api', fnc: 'setRateLimit', args: [ 'bot', request.headers['ratelimit-limit'], request.headers['ratelimit-remaining'], request.headers['ratelimit-reset'] ] })
+      global.workers.sendToAll({ ns: 'api', fnc: 'setRateLimit', args: [ 'bot', request.headers['ratelimit-limit'], request.headers['ratelimit-remaining'], request.headers['ratelimit-reset'] ] })
 
       global.panel.io.emit('api.stats', { data: request.data, timestamp: _.now(), call: 'getClipById', api: 'kraken', endpoint: url, code: request.status, remaining: this.remainingAPICalls })
       // get mp4 from thumbnail
@@ -1601,7 +1475,7 @@ class API {
       return request.data.data
     } catch (e) {
       global.log.error(`API: ${url} - ${e.stack}`)
-      if (global.panel && global.panel.io) global.panel.io.emit('api.stats', { timestamp: _.now(), call: 'getTopClips', api: 'helix', endpoint: url, code: e.stack })
+      if (global.panel && global.panel.io) global.panel.io.emit('api.stats', { timestamp: _.now(), call: 'getTopClips', api: 'helix', endpoint: url, code: e.response.status, data: e.stack })
     }
   }
 }

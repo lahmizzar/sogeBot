@@ -1,7 +1,10 @@
 'use strict';
 
 // 3rdparty libraries
-import * as cluster from 'cluster';
+const {
+  isMainThread,
+// tslint:disable-next-line:no-var-requires
+} = require('worker_threads');
 import * as _ from 'lodash';
 
 // bot libraries
@@ -58,7 +61,7 @@ class Bets extends System {
     };
     super(options);
 
-    if (cluster.isMaster) {
+    if (isMainThread) {
       this.checkIfBetExpired();
     }
 
@@ -70,7 +73,11 @@ class Bets extends System {
       socket.on('close', async (option) => {
         const message = '!bet ' + (option === 'refund' ? option : 'close ' + option);
         global.log.process({ type: 'parse', sender: { username: global.commons.getOwner() }, message });
-        _.sample(require('cluster').workers).send({ type: 'message', sender: { username: global.commons.getOwner() }, message, skip: true });
+        global.tmi.message({
+          sender: { username: global.commons.getOwner() },
+          message,
+          skip: true,
+        });
       });
     });
   }
@@ -128,7 +135,7 @@ class Bets extends System {
         maxIndex: options.length - 1,
         minutes: timeout,
         options: options.map((v, i) => `${i}. '${v}'`).join(', '),
-        command: await this.settings.commands['!bet'],
+        command: this.settings.commands['!bet'],
       }), opts.sender);
     } catch (e) {
       switch (e.message) {
@@ -136,10 +143,12 @@ class Bets extends System {
           global.commons.sendMessage(global.translate('bets.notEnoughOptions'), opts.sender);
           break;
         case ERROR_ALREADY_OPENED:
-          global.commons.sendMessage(await global.commons.prepare('bets.running', {
-            command: await this.settings.commands['!bet'],
-            $maxIndex: currentBet.options.length - 1,
-            $options: currentBet.options.map((v, i) => `${i}. '${v.name}'`).join(', ') }), opts.sender);
+          global.commons.sendMessage(
+            global.commons.prepare('bets.running', {
+              command: this.settings.commands['!bet'],
+              maxIndex: currentBet.options.length - 1,
+              options: currentBet.options.map((v, i) => `${i}. '${v.name}'`).join(', '),
+            }), opts.sender);
           break;
         default:
           global.log.warning(e.stack);
@@ -153,10 +162,10 @@ class Bets extends System {
     if (_.isEmpty(currentBet)) { global.commons.sendMessage(global.translate('bets.notRunning'), opts.sender); } else {
       global.commons.sendMessage(await global.commons.prepare(currentBet.locked ? 'bets.lockedInfo' : 'bets.info', {
         command: opts.command,
-        $title: currentBet.title,
-        $maxIndex: currentBet.options.length - 1,
-        $options: currentBet.options.map((v, i) => `${i}. '${v.name}'`).join(', '),
-        $minutes: Number((currentBet.end - new Date().getTime()) / 1000 / 60).toFixed(1) }), opts.sender);
+        title: currentBet.title,
+        maxIndex: currentBet.options.length - 1,
+        options: currentBet.options.map((v, i) => `${i}. '${v.name}'`).join(', '),
+        minutes: Number((currentBet.end - new Date().getTime()) / 1000 / 60).toFixed(1) }), opts.sender);
     }
   }
 

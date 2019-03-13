@@ -26,10 +26,6 @@
     },
     "settings": {
       "uptime-format": "Format pro uptime nastaven na $value",
-      "atUsername": {
-        "true": "Uzivatelske jmena budou zobrazena s @ takto @foo",
-        "false": "Uzivatelske jmena budou zobrazena bez @ takto foo"
-      },
       "sendWithMe": {
         "true": "Bot bude posilat zpravy pomoci /me",
         "false": "Bot nebude posilat zpravy pomoci /me"
@@ -40,7 +36,9 @@
     "days": "den|4:dny|dnu",
     "hours": "hodina|4:hodiny|hodin",
     "minutes": "minuta|4:minuty|minut",
+    "seconds": "sekunda|4:sekundy|sekund",
     "messages": "zprava|4:zpravy|zprav",
+    "empty": "prázdné",
     "links": "odkaz|4:odkazy|odkazu",
     "isRegistered": "$sender, nelze pouzit $keyword, protoze je uz prirazena k jine akci!"
   },
@@ -288,7 +286,7 @@
       "sub": "ti dal <strong>sub</strong> | $tier",
       "subgift": "byl <strong>darován</strong> sub od $username",
       "subcommunitygift": "<strong>daroval</strong> suby pro $count diváků",
-      "resub": "ti dal <strong>resub</strong> $months měsíců | $tier",
+      "resub": "ti dal <strong>resub</strong> $subStreak $subStreakName | $tier",
       "cheer": "ti dal <strong>cheer</strong> $bits bitů",
       "tip": "ti dal <strong>tip</strong> $formatted_amount"
     },
@@ -356,6 +354,11 @@
         "items": "Položky",
         "bits": "Bity",
         "subgifts": "Darované suby",
+        "subStreakShareEnabled" : "Je substreak share zapnut (true/false)",
+        "subStreak": "Subscribů v řadě",
+        "subStreakName": "Název měsíce (1 měsíc, 2 měsíce) pro subscribů v řadě",
+        "subCumulativeMonths": "Celkový počet subscribů",
+        "subCumulativeMonthsName": "Název měsíce (1 měsíc, 2 měsíce) pro celkový počet subscribů",
         "message": "Zpráva",
         "reason": "Důvod",
         "target": "Cíl",
@@ -365,8 +368,6 @@
         "months": "Počet měsíců",
         "monthsName": "Název měsíce (1 měsíc, 2 měsíce)",
         "oldGame": "Hra před změnou",
-        "userObject": "Úplný uživatelský objekt",
-        "recipientObject": "Úplný objekt příjemce",
         "recipient": "Příjemce",
         "ytSong": "Aktuální píseň na YouTube",
         "spotifySong": "Aktuální píseň na Spotify",
@@ -379,7 +380,25 @@
         "latestCheerAmount": "Poslední Cheer (počet)",
         "latestCheerMessage": "Poslední Cheer (zpráva)",
         "latestCheer": "Poslední Cheer (uživatel)",
-        "version": "Bot version"
+        "version": "Bot version",
+        "is": {
+          "moderator": "Je uživatel mod? (bool)",
+          "subscriber": "Je uživatel sub? (bool)",
+          "regular": "Je uživatel regular? (bool)",
+          "follower": "Je uživatel follower? (bool)",
+          "broadcaster": "Je uživatel broadcaster? (bool)",
+          "bot": "Je uživatel bot? (bool)",
+          "owner": "Je uživatel vlastník bota? (bool)"
+        },
+        "recipientis": {
+          "moderator": "Je příjemce mod? (bool)",
+          "subscriber": "Je příjemce sub? (bool)",
+          "regular": "Je příjemce regular? (bool)",
+          "follower": "Je příjemce follower? (bool)",
+          "broadcaster": "Je příjemce broadcaster? (bool)",
+          "bot": "Je příjemce bot? (bool)",
+          "owner": "Je příjemce vlastník bota? (bool)"
+        }
       }
     },
     "page-settings": {
@@ -555,6 +574,8 @@
     "subscribers": "Subscribeři",
     "bits": "Bity",
     "subgifts": "Darované suby",
+    "subStreak": "Subscribů v řadě",
+    "subCumulativeMonths": "Celkový počet subscribů",
     "tips": "Spropitné",
     "tier": "Tier",
     "status": "status",
@@ -651,6 +672,7 @@
     "spam": "Spam",
     "colors": "Barvy",
     "emotes": "Smajlíky",
+    "one-record-per-line": "jeden záznam na řádek",
     "on": "zapnuto",
     "off": "vypnuto",
     "muted": "neoznámit",
@@ -684,6 +706,7 @@
     "widget-title-latest-followers": "NEJNOVĚJŠÍ FOLLOWEŘI",
     "widget-title-latest-subscribers": "NEJNOVĚJŠÍ SUBSCRIBEŘI",
     "widget-title-commercial": "REKLAMY",
+    "widget-title-spotify": "SPOTIFY",
     "widget-title-join": "JOIN LIST",
     "widget-title-part": "PART LIST",
     "event": "událost",
@@ -1057,6 +1080,7 @@
   },
   "gambling": {
     "duel": {
+      "bank": "$sender, soucasny bank pro $command je $points $pointsName",
       "lowerThanMinimalBet": "$sender, minimalni sazka pro $command je $points $pointsName",
       "cooldown": "$sender, nemuzes pouzit $command jeste $cooldown $minutesName.",
       "joined": "$sender, hodne stesti behem duelu. Vsadil sis na sebe $points $pointsName!",

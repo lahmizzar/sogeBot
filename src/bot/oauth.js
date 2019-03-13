@@ -3,7 +3,9 @@
 'use strict'
 
 const axios = require('axios')
-const cluster = require('cluster')
+const {
+  isMainThread
+} = require('worker_threads');
 
 import Core from './_interface'
 const constants = require('./constants')
@@ -31,9 +33,10 @@ class OAuth extends Core {
         refreshToken: '',
         username: '',
         scopes: [
-          'chat_login',
-          'channel_subscriptions',
-          'channel_check_subscription'
+          'chat:read',
+          'chat:edit',
+          'channel:moderate',
+          'channel:read:subscriptions',
         ],
         _authenticatedScopes: []
       },
@@ -79,7 +82,7 @@ class OAuth extends Core {
         },
         generate: {
           type: 'link',
-          href: 'https://twitchtokengenerator.com/quick/Wwv9XnaPVM',
+          href: 'https://twitchtokengenerator.com/quick/RkshHUnw16',
           class: 'btn btn-primary btn-block',
           text: 'commons.generate',
           target: '_blank'
@@ -129,23 +132,23 @@ class OAuth extends Core {
   }
 
   async getChannelId () {
+    if (!isMainThread || global.mocha) return
     if (typeof global.api === 'undefined' || typeof global.tmi === 'undefined') return setTimeout(() => this.getChannelId(), 1000)
-    if (cluster.isWorker || global.mocha) return
     clearTimeout(this.timeouts['getChannelId'])
 
     let timeout = 1000
-    const channel = await this.settings.general.channel
-    if (this.currentChannel !== channel && channel !== '') {
-      this.currentChannel = channel
-      const cid = await global.api.getIdFromTwitch(channel, true)
+    if (this.currentChannel !== this.settings.general.channel && this.settings.general.channel !== '') {
+      this.currentChannel = this.settings.general.channel
+      const cid = await global.api.getIdFromTwitch(this.settings.general.channel, true)
       if (typeof cid !== 'undefined' && cid !== null) {
         this.channelId = cid
         global.log.info('Channel ID set to ' + cid)
         global.tmi.reconnect('bot')
         global.tmi.reconnect('broadcaster')
       } else {
-        global.log.error(`Cannot get channel ID of ${channel} - waiting ${Number(global.api.calls.bot.refresh - (Date.now() / 1000)).toFixed(2)}s`)
-        timeout = (global.api.calls.bot.refresh - (Date.now() / 1000)) * 1000
+        const toWait = Math.max(Number(global.api.calls.bot.refresh - (Date.now() / 1000)), 30);
+        global.log.error(`Cannot get channel ID of ${this.settings.general.channel} - waiting ${toWait.toFixed()}s`)
+        timeout = toWait * 1000
       }
     }
 
@@ -187,18 +190,18 @@ class OAuth extends Core {
       }
     */
   async validateOAuth (type: string) {
-    if (cluster.isWorker || global.mocha) return
+    if (!isMainThread || global.mocha) return
     clearTimeout(this.timeouts[`validateOAuth-${type}`])
 
     const url = 'https://id.twitch.tv/oauth2/validate'
     let status = true
     try {
-      if (['bot', 'broadcaster'].includes(type) && (await this.settings[type].accessToken) === '') throw new Error('no accessfresh token for ' + type)
+      if (['bot', 'broadcaster'].includes(type) && (this.settings[type].accessToken) === '') throw new Error('no accessfresh token for ' + type)
       else if (!['bot', 'broadcaster'].includes(type)) throw new Error(`Type ${type} is not supported`)
 
       const request = await axios.get(url, {
         headers: {
-          'Authorization': 'OAuth ' + await this.settings[type].accessToken
+          'Authorization': 'OAuth ' + this.settings[type].accessToken
         }
       })
       this.settings._.clientId = request.data.client_id
@@ -209,7 +212,7 @@ class OAuth extends Core {
       this.settings[type]._authenticatedScopes = request.data.scopes
       this.settings[type].username = request.data.login
 
-      const cache = await this.settings._[type]
+      const cache = this.settings._[type]
       if (cache !== '' && cache !== request.data.login + request.data.scopes.join(',')) {
         this.settings._[type] = request.data.login + request.data.scopes.join(',')
         global.tmi.reconnect(type) // force TMI reconnect
@@ -218,7 +221,7 @@ class OAuth extends Core {
       global.status.API = request.status === 200 ? constants.CONNECTED : constants.DISCONNECTED
     } catch (e) {
       status = false
-      if ((await this.settings[type].refreshToken) !== '') this.refreshAccessToken(type)
+      if ((this.settings[type].refreshToken) !== '') this.refreshAccessToken(type)
       else {
         this.settings[type].username = ''
         this.settings[type]._authenticatedScopes = []
@@ -243,14 +246,14 @@ class OAuth extends Core {
       }
     */
   async refreshAccessToken (type: string) {
-    if (cluster.isWorker) return
+    if (!isMainThread) return
     global.log.warning('Refreshing access token of ' + type)
     const url = 'https://twitchtokengenerator.com/api/refresh/'
     try {
-      if (['bot', 'broadcaster'].includes(type) && (await this.settings[type].refreshToken) === '') throw new Error('no refresh token for ' + type)
+      if (['bot', 'broadcaster'].includes(type) && (this.settings[type].refreshToken) === '') throw new Error('no refresh token for ' + type)
       else if (!['bot', 'broadcaster'].includes(type)) throw new Error(`Type ${type} is not supported`)
 
-      const request = await axios.post(url + encodeURIComponent(await this.settings[type].refreshToken))
+      const request = await axios.post(url + encodeURIComponent(this.settings[type].refreshToken))
       this.settings[type].accessToken = request.data.token
       this.settings[type].refreshToken = request.data.refresh
 

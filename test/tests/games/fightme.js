@@ -1,5 +1,9 @@
 /* global describe it before */
-if (require('cluster').isWorker) process.exit()
+const {
+  isMainThread
+} = require('worker_threads');
+if (!isMainThread) process.exit()
+
 
 require('../../general.js')
 
@@ -58,8 +62,8 @@ describe('game/fightme - !fightme', () => {
         await db.cleanup()
         await message.prepare()
 
-        await global.db.engine.insert('users', { id: '1', username: 'usermod1', is: { mod: true } })
-        await global.db.engine.insert('users', { id: '2', username: 'usermod2', is: { mod: true } })
+        await global.db.engine.insert('users', { id: '1', username: 'usermod1', is: { moderator: true } })
+        await global.db.engine.insert('users', { id: '2', username: 'usermod2', is: { moderator: true } })
       })
 
       it('Challenger is starting !fightme', async () => {

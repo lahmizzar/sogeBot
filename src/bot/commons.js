@@ -6,47 +6,38 @@ const moment = require('moment')
 
 const config = require('@config')
 
-const cluster = require('cluster')
+const {
+  isMainThread
+} = require('worker_threads');
 const Message = require('./message')
 
+const __DEBUG__ = {
+  sendMessage: process.env.DEBUG &&
+              (
+                process.env.DEBUG.includes('commons.*') ||
+                process.env.DEBUG.includes('commons.sendMessage')
+              )
+}
+
 function Commons () {
-  this.compact = {}
   this.registerConfiguration()
 }
 
 Commons.prototype.registerConfiguration = function () {
   if (_.isNil(global.configuration)) return setTimeout(() => this.registerConfiguration(), 1)
 
-  global.configuration.register('atUsername', 'core.settings.atUsername', 'bool', true)
   global.configuration.register('sendWithMe', 'core.settings.sendWithMe', 'bool', false)
-}
-
-Commons.prototype.processAll = function (proc) {
-  if (cluster.isMaster) {
-    // run on master
-    const namespace = _.get(global, proc.ns, null)
-    namespace[proc.fnc].apply(namespace, proc.args)
-    proc.type = 'call'
-    // send to all clusters
-    // eslint-disable-next-line
-    for (let w of Object.entries(cluster.workers)) {
-      if (w[1].isConnected()) w[1].send(proc)
-    }
-  } else {
-    // need to be sent to master
-    if (process.send) process.send(proc)
-  }
 }
 
 Commons.prototype.getIgnoreList = function () {
   return global.users.settings.users.ignorelist
 }
 
-Commons.prototype.isIgnored = async function (sender) {
+Commons.prototype.isIgnored = function (sender) {
   if (sender !== null) { // null can be bot from dashboard or event
     if (typeof sender === 'string') sender = { username: sender }
     const isIgnored = this.getIgnoreList().includes(sender.username)
-    const isBroadcaster = await this.isBroadcaster(sender)
+    const isBroadcaster = this.isBroadcaster(sender)
     return isIgnored && !isBroadcaster
   } else return false
 }
@@ -54,7 +45,7 @@ Commons.prototype.isIgnored = async function (sender) {
 Commons.prototype.isSystemEnabled = function (fn) {
   var name = (typeof fn === 'object') ? fn.constructor.name : fn
   var enabled = !_.isNil(config.systems) && !_.isNil(config.systems[name.toLowerCase()]) ? (_.isBoolean(config.systems[name.toLowerCase()] ? config.systems[name.toLowerCase()] : config.systems[name.toLowerCase()].enabled)) : false
-  if (typeof fn === 'object' && cluster.isMaster) global.log.info(name + ' system ' + global.translate('core.loaded') + ' ' + (enabled ? chalk.green(global.translate('core.enabled')) : chalk.red(global.translate('core.disabled'))))
+  if (typeof fn === 'object' && isMainThread) global.log.info(name + ' system ' + global.translate('core.loaded') + ' ' + (enabled ? chalk.green(global.translate('core.enabled')) : chalk.red(global.translate('core.disabled'))))
   return enabled
 }
 Commons.prototype.isIntegrationEnabled = function (fn) {
@@ -90,7 +81,7 @@ Commons.prototype.prepare = async function (translate, attr) {
   let msg = global.translate(translate)
   attr = _(attr).toPairs().sortBy((o) => -o[0].length).fromPairs().value() // reorder attributes by key length
   for (let [key, value] of Object.entries(attr)) {
-    if (_.includes(['username', 'who', 'winner', 'sender', 'loser'], key)) value = await global.configuration.getValue('atUsername') ? `@${value}` : value
+    if (_.includes(['username', 'who', 'winner', 'sender', 'loser'], key)) value = global.users.settings.users.showWithAt ? `@${value}` : value
     msg = msg.replace(new RegExp('[$]' + key, 'g'), value)
   }
   return msg
@@ -122,6 +113,10 @@ Commons.prototype.sendMessage = async function (message, sender, attr) {
   attr = attr || {}
   sender = sender || {}
 
+  if (__DEBUG__.sendMessage) {
+    global.log.debug({message, sender, attr})
+  }
+
   if (_.isString(sender)) sender = { username: String(sender) }
 
   if (_.isNil(sender) || _.isNil(sender.username)) sender.username = undefined
@@ -134,7 +129,7 @@ Commons.prototype.sendMessage = async function (message, sender, attr) {
 
   // if sender is null/undefined, we can assume, that username is from dashboard -> bot
   if ((typeof sender.username === 'undefined' || sender.username === null) && !attr.force) return false // we don't want to reply on bot commands
-  message = !_.isNil(sender.username) ? message.replace(/\$sender/g, (global.configuration.getValue('atUsername') ? '@' : '') + sender.username) : message
+  message = !_.isNil(sender.username) ? message.replace(/\$sender/g, (global.users.settings.users.showWithAt ? '@' : '') + sender.username) : message
   if (!(await global.configuration.getValue('mute')) || attr.force) {
     if ((!_.isNil(attr.quiet) && attr.quiet)) return true
     if (sender['message-type'] === 'whisper') {
@@ -154,8 +149,9 @@ Commons.prototype.sendMessage = async function (message, sender, attr) {
 
 Commons.prototype.message = async function (type, username, message, retry) {
   if (config.debug.console) return
-  if (cluster.isWorker && process.send) process.send({ type: type, sender: username, message: message })
-  else if (cluster.isMaster) {
+  if (!isMainThread) {
+    global.workers.sendToMaster({ type: type, sender: username, message: message })
+  } else if (isMainThread) {
     try {
       if (username === null) username = await global.oauth.settings.general.channel
       if (username === '') {
@@ -171,10 +167,10 @@ Commons.prototype.message = async function (type, username, message, retry) {
 }
 
 Commons.prototype.timeout = async function (username, reason, timeout) {
-  if (cluster.isMaster) {
+  if (isMainThread) {
     reason = reason.replace(/\$sender/g, username)
     global.tmi.client.bot.chat.timeout(global.oauth.settings.general.channel, username, timeout, reason)
-  } else if (process.send) process.send({ type: 'timeout', username: username, timeout: timeout, reason: reason })
+  } else global.workers.sendToMaster({ type: 'timeout', username: username, timeout: timeout, reason: reason })
 }
 
 Commons.prototype.getOwner = function () {
@@ -213,12 +209,11 @@ Commons.prototype.isBroadcaster = function (user) {
   }
 }
 
-Commons.prototype.isMod = async function (user) {
+Commons.prototype.isModerator = async function (user) {
   try {
     if (_.isString(user)) user = await global.users.getByName(user)
-    else if (_.isNil(user.isModerator)) user = await global.users.getByName(user.username)
-    else user = { is: { mod: user.isModerator } }
-    return !_.isNil(user.is.mod) ? user.is.mod : false
+    else user = { is: { moderator: typeof user.badges.moderator !== 'undefined' } }
+    return !_.isNil(user.is.moderator) ? user.is.moderator : false
   } catch (e) {
     return false
   }
@@ -228,6 +223,24 @@ Commons.prototype.isRegular = async function (user) {
   try {
     if (_.isString(user)) user = await global.users.getByName(user)
     return !_.isNil(user.is.regular) ? user.is.regular : false
+  } catch (e) {
+    return false
+  }
+}
+
+Commons.prototype.isFollower = async function (user) {
+  try {
+    if (_.isString(user)) user = await global.users.getByName(user)
+    return !_.isNil(user.is.follower) ? user.is.follower : false
+  } catch (e) {
+    return false
+  }
+}
+
+Commons.prototype.isSubscriber = async function (user) {
+  try {
+    if (_.isString(user)) user = await global.users.getByName(user)
+    return !_.isNil(user.is.subscriber) ? user.is.subscriber : false
   } catch (e) {
     return false
   }
@@ -299,6 +312,13 @@ Commons.prototype.getLocalizedName = function (number, translation) {
     }
   }
   return name
+}
+
+/*
+ * returns nearest 5
+ */
+Commons.prototype.round5 = function (x) {
+  return (x % 5) >= 2.5 ? parseInt(x / 5) * 5 + 5 : parseInt(x / 5) * 5;
 }
 
 module.exports = Commons

@@ -1,5 +1,9 @@
 /* global describe it before */
-if (require('cluster').isWorker) process.exit()
+const {
+  isMainThread
+} = require('worker_threads');
+if (!isMainThread) process.exit()
+
 
 require('../../general.js')
 
@@ -26,7 +30,7 @@ describe('Top - !top subage', () => {
         username: 'user' + i,
         is: {
           subscriber: true,
-          mod: Math.floor(Math.random()) === 1,
+          moderator: Math.floor(Math.random()) === 1,
           follower: Math.floor(Math.random()) === 1
         },
         time: {

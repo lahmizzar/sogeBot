@@ -229,7 +229,7 @@ class CustomCommands extends System {
 
     let [isRegular, isMod, isOwner] = await Promise.all([
       global.commons.isRegular(opts.sender),
-      global.commons.isMod(opts.sender),
+      global.commons.isModerator(opts.sender),
       global.commons.isOwner(opts.sender)
     ])
 
@@ -244,17 +244,25 @@ class CustomCommands extends System {
         (r.permission === constants.MODS && (isMod || isOwner)) ||
         (r.permission === constants.OWNER_ONLY && isOwner)) &&
         await this.checkFilter(opts, r.filter)) {
-        _responses.push(r.response)
-        if (responses.length > 1) {
-          // slow down command send message to have proper order (every 100ms)
-          setTimeout(() => global.commons.sendMessage(r.response, opts.sender, { 'param': param, 'cmd': command.command }), r.order * 100)
-          if (r.stopIfExecuted) break
-        } else {
-          global.commons.sendMessage(r.response, opts.sender, { 'param': param, 'cmd': command.command })
-        }
+          _responses.push(r)
       }
     }
-    return _responses
+    this.sendResponse(_.cloneDeep(_responses), { param, sender: opts.sender, command: command.command });
+    return _responses.map((o) => {
+      return o.response
+    })
+  }
+
+  async sendResponse(responses, opts) {
+    if (responses.length === 0) return;
+    const response = responses.shift()
+    await global.commons.sendMessage(response.response, opts.sender, {
+      param: opts.param,
+      cmd: opts.command
+    })
+    setTimeout(() => {
+      this.sendResponse(responses, opts);
+    }, 300)
   }
 
   async list (opts: Object) {
@@ -386,18 +394,35 @@ class CustomCommands extends System {
     if (Number(count) < 0) count = 0
 
     return parseInt(
-      Number(count) <= Number.MAX_SAFE_INTEGER / 1000000
+      Number(count) <= Number.MAX_SAFE_INTEGER
         ? count
-        : Number.MAX_SAFE_INTEGER / 1000000, 10)
+        : Number.MAX_SAFE_INTEGER, 10)
   }
 
   async checkFilter (opts: Object, filter: string) {
     if (typeof filter === 'undefined' || filter.trim().length === 0) return true
     let toEval = `(function evaluation () { return ${filter} })()`
+
+    let $userObject = await global.users.getByName(opts.sender.username)
+    let $rank = null
+    if (global.systems.ranks.isEnabled()) {
+      $rank = await global.systems.ranks.get($userObject)
+    }
+
+    const $is = {
+      moderator: await global.commons.isModerator(opts.sender.username),
+      subscriber: await global.commons.isSubscriber(opts.sender.username),
+      regular: await global.commons.isRegular(opts.sender.username),
+      broadcaster: global.commons.isBroadcaster(opts.sender.username),
+      bot: global.commons.isBot(opts.sender.username),
+      owner: global.commons.isOwner(opts.sender.username),
+    }
+
     const context = {
       _: _,
       $sender: opts.sender.username,
-      $userObject: await global.users.getByName(opts.sender.username),
+      $is,
+      $rank,
       // add global variables
       $game: _.get(await global.db.engine.findOne('api.current', { key: 'game' }), 'value', 'n/a'),
       $title: _.get(await global.db.engine.findOne('api.current', { key: 'title' }), 'value', 'n/a'),

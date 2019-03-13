@@ -16,6 +16,7 @@
         :class="{ disabled: isDisabled(index), 'position-absolute': group.display.type !== 'multi' }"
         :style="{
           border: goal.customization.bar.borderPx + 'px solid ' + goal.customization.bar.borderColor,
+          'background-color': goal.customization.bar.backgroundColor ,
           'font-family': getFontFamilyCSS(goal.customization.font.family),
           'margin-top': index !== 0 && goals.length > 0 && group.display.type === 'multi' ? group.display.spaceBetweenGoalsInPx + 'px' : '0px',
         }">
@@ -71,6 +72,7 @@
           :class="{ disabled: isDisabled(index) }"
           :style="{
             border: goal.customization.bar.borderPx + 'px solid ' + goal.customization.bar.borderColor,
+            'background-color': goal.customization.bar.backgroundColor,
             'font-family': getFontFamilyCSS(goal.customization.font.family)
           }">
           <b-progress-bar
@@ -109,7 +111,7 @@
             </template>
             <template v-else>0</template>
           </div>
-          <div class="col-auto text-truncate text-center text-uppercase pl-2 pr-2">
+          <div class="col-auto text-truncate text-center text-uppercase pl-2 pr-2" v-if="!goal.endAfterIgnore">
             {{ $moment().to(goal.endAfter) }}
           </div>
           <div class="col text-right pr-2">
@@ -226,7 +228,7 @@ export default Vue.extend({
       if (this.group === null) return false;
 
       const goal = this.goals[idx]
-      return new Date(goal.endAfter).getTime() <= new Date().getTime()
+      return new Date(goal.endAfter).getTime() <= new Date().getTime() && !goal.endAfterIgnore
     },
     textStrokeGenerator(radius, color) {
       if (radius === 0) return ''

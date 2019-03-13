@@ -7,7 +7,9 @@ const config = global.migration ? {
   database: {}
 } : require('@config')
 const flatten = require('flat')
-const cluster = require('cluster')
+const {
+  isMainThread
+} = require('worker_threads');
 
 const _ = require('lodash')
 
@@ -15,7 +17,7 @@ class IMongoDB extends Interface {
   constructor (forceIndexes, forceRemoveIndexes, forceDb) {
     super('mongodb')
 
-    this.createIndexes = (forceIndexes && cluster.isMaster)
+    this.createIndexes = (forceIndexes && isMainThread)
     this.forceRemoveIndexes = forceRemoveIndexes || false
 
     this.connected = false
@@ -89,7 +91,7 @@ class IMongoDB extends Interface {
     this.connected = true
   }
 
-  async find (table, where) {
+  async find (table, where, lookup) {
     where = where || {}
     if (!_.isNil(where._id)) {
       let regexp = new RegExp('^[0-9a-fA-F]{24}$')
@@ -113,10 +115,27 @@ class IMongoDB extends Interface {
         if (sortBy !== '_id') {
           where[sortBy.replace('-', '')] = { $exists: true, $ne: order === 1 ? 0 : null }
         }
-        items = await db.collection(table).find(where).sort({ [sortBy.replace('-', '')]: order }).limit(Number(total))
+
+        if (lookup) {
+          const lookupArr = []
+          if (lookup.constructor !== Array) lookup = [lookup]
+          for (const l of lookup) {
+            lookupArr.push({ $lookup: l })
+          }
+          items = await db.collection(table).aggregate([{ $match: where }, ...lookupArr])
+        } else {
+          items = await db.collection(table).find(where).sort({ [sortBy.replace('-', '')]: order }).limit(Number(total))
+        }
       } else {
+        const lookupArr = []
+        if (lookup) {
+          if (lookup.constructor !== Array) lookup = [lookup]
+          for (const l of lookup) {
+            lookupArr.push({ $lookup: l })
+          }
+        }
         const group = { _id: `$${groupBy}`, [sumBy]: { $sum: `$${sumBy}` } }
-        items = await db.collection(table).aggregate([{ $group: group }]).sort({ [sortBy.replace('-', '')]: order }).limit(Number(total))
+        items = await db.collection(table).aggregate([{ $group: group }, ...lookupArr]).sort({ [sortBy.replace('-', '')]: order }).limit(Number(total))
       }
       return items.toArray()
     } catch (e) {
@@ -128,7 +147,7 @@ class IMongoDB extends Interface {
     }
   }
 
-  async findOne (table, where) {
+  async findOne (table, where, lookup) {
     where = where || {}
     if (!_.isNil(where._id)) {
       let regexp = new RegExp('^[0-9a-fA-F]{24}$')
@@ -137,9 +156,19 @@ class IMongoDB extends Interface {
     } else where = flatten(where)
 
     try {
-      let db = this.client.db(this.dbName)
-      let item = await db.collection(table).findOne(where)
-      return item || {}
+      if (lookup) {
+        const lookupArr = []
+        if (lookup.constructor !== Array) lookup = [lookup]
+        for (const l of lookup) {
+          lookupArr.push({ $lookup: l })
+        }
+        let item = await this.client.db(this.dbName).collection(table).aggregate([{ $match: where }, ...lookupArr])
+        item = await item.toArray();
+        return item[0] || {}
+      } else {
+        let item = await this.client.db(this.dbName).collection(table).findOne(where)
+        return item || {}
+      }
     } catch (e) {
       global.log.error(e.stack)
       if (e.message.match(/EPIPE/g)) {

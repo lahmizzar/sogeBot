@@ -4,7 +4,9 @@
 // 3rdparty libraries
 const _ = require('lodash')
 const constants = require('../constants')
-const cluster = require('cluster')
+const {
+  isMainThread
+} = require('worker_threads');
 const axios = require('axios')
 const XRegExp = require('xregexp')
 
@@ -135,7 +137,7 @@ class Emotes extends Overlay {
       }
     }
     super({ settings, ui })
-    if (cluster.isMaster) {
+    if (isMainThread) {
       global.db.engine.index({ table: this.collection.cache, index: 'code' })
       setTimeout(() => {
         if (!this.fetch.global) this.fetchEmotesGlobal()
@@ -367,9 +369,9 @@ class Emotes extends Overlay {
   }
 
   async containsEmotes (opts: ParserOptions) {
-    if (_.isNil(opts.sender)) return true
-    if (cluster.isWorker) {
-      if (process.send) process.send({ type: 'call', ns: 'overlays.emotes', fnc: 'containsEmotes', args: [opts] })
+    if (_.isNil(opts.sender) || !opts.sender.emotes) return true
+    if (!isMainThread) {
+      global.workers.sendToMaster({ type: 'call', ns: 'overlays.emotes', fnc: 'containsEmotes', args: [opts] })
       return
     }
 
@@ -391,10 +393,26 @@ class Emotes extends Overlay {
       })
     }
 
+    // add emotes from twitch which are not maybe in cache (other partner emotes etc)
+    for (const emote of opts.sender.emotes) {
+      // don't include simple emoted (id 1-14)
+      if (emote.id < 15) continue
+
+      cache.push({
+        type: 'twitch',
+        code: opts.message.slice(emote.start, emote.end+1),
+        urls: {
+          '1': 'https://static-cdn.jtvnw.net/emoticons/v1/' + emote.id + '/1.0',
+          '2': 'https://static-cdn.jtvnw.net/emoticons/v1/' + emote.id + '/2.0',
+          '3': 'https://static-cdn.jtvnw.net/emoticons/v1/' + emote.id + '/3.0',
+        }
+      })
+    }
+
     for (let j = 0, jl = cache.length; j < jl; j++) {
       const emote = cache[j]
       if (parsed.includes(emote.code)) continue // this emote was already parsed
-      for (let i = 0, length = (opts.message.match(new RegExp(XRegExp.escape(emote.code), 'g')) || []).length; i < length; i++) {
+      for (let i = 0, length = (opts.message.match(new RegExp('\\b' + XRegExp.escape(emote.code) + '\\b', 'g')) || []).length; i < length; i++) {
         usedEmotes[emote.code] = emote
         parsed.push(emote.code)
       }

@@ -17,11 +17,17 @@
     "goalAmount": {
       "title": "Goal Amount"
     },
+    "countBitsAsTips": {
+      "title": "Count Bits as Tips"
+    },
     "currentAmount": {
       "title": "Current Amount"
     },
     "endAfter": {
       "title": "End After"
+    },
+    "endAfterIgnore": {
+      "title": "Goal will not expire"
     },
     "fonts": {
       "title": "Font Family",
@@ -44,6 +50,9 @@
     },
     "borderColor": {
       "title": "Border Color"
+    },
+    "backgroundColor": {
+      "title": "Background Color"
     },
     "type": {
       "title": "Type"

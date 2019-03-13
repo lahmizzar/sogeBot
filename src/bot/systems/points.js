@@ -2,6 +2,9 @@
 
 // 3rdparty libraries
 const _ = require('lodash')
+const {
+  isMainThread
+} = require('worker_threads');
 
 // bot libraries
 const constants = require('../constants')
@@ -38,7 +41,7 @@ class Points extends System {
     }
     super({ settings })
 
-    if (require('cluster').isMaster) {
+    if (isMainThread) {
       this.updatePoints()
     }
   }
@@ -62,7 +65,7 @@ class Points extends System {
     var ptsPerInterval = isOnline ? perInterval : perOfflineInterval
 
     try {
-      for (let username of (await global.db.engine.find('users.online')).map((o) => o.username)) {
+      for (let username of (await global.users.getAllOnlineUsernames())) {
         if (await global.commons.isBot(username)) continue
 
         let user = await global.db.engine.findOne('users', { username })
@@ -135,9 +138,9 @@ class Points extends System {
     if (Number(points) < 0) points = 0
 
     return parseInt(
-      Number(points) <= Number.MAX_SAFE_INTEGER / 1000000
+      Number(points) <= Number.MAX_SAFE_INTEGER
         ? points
-        : Number.MAX_SAFE_INTEGER / 1000000, 10)
+        : Number.MAX_SAFE_INTEGER, 10)
   }
 
   async set (opts) {
@@ -201,16 +204,15 @@ class Points extends System {
         global.commons.sendMessage(message, opts.sender)
       }
     } catch (err) {
-      console.log(err)
       global.commons.sendMessage(global.translate('points.failed.give').replace('$command', opts.command), opts.sender)
     }
   }
 
   async getPointsName (points) {
-    var pointsNames = (await this.settings.points.name).split('|').map(Function.prototype.call, String.prototype.trim)
+    var pointsNames = (this.settings.points.name).split('|').map(Function.prototype.call, String.prototype.trim)
     var single, multi, xmulti
     // get single|x:multi|multi from pointsName
-    if ((await this.settings.points.name).length === 0) {
+    if ((this.settings.points.name).length === 0) {
       return ''
     } else {
       switch (pointsNames.length) {
@@ -277,7 +279,7 @@ class Points extends System {
     try {
       const points = new Expects(opts.parameters).points({ all: false }).toArray()
 
-      for (let username of (await global.db.engine.find('users.online')).map((o) => o.username)) {
+      for (let username of (await global.users.getAllOnlineUsernames())) {
         if (await global.commons.isBot(username)) continue
 
         let user = await global.db.engine.findOne('users', { username })
@@ -300,7 +302,7 @@ class Points extends System {
     try {
       const points = new Expects(opts.parameters).points({ all: false }).toArray()
 
-      for (let username of (await global.db.engine.find('users.online')).map((o) => o.username)) {
+      for (let username of (await global.users.getAllOnlineUsernames())) {
         if (await global.commons.isBot(username)) continue
 
         let user = await global.db.engine.findOne('users', { username })

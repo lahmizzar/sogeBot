@@ -5,7 +5,9 @@ const _ = require('lodash')
 const chalk = require('chalk')
 const SpotifyWebApi = require('spotify-web-api-node')
 const crypto = require('crypto')
-const cluster = require('cluster')
+const {
+  isMainThread
+} = require('worker_threads');
 const axios = require('axios')
 
 // bot libraries
@@ -27,7 +29,12 @@ const __DEBUG__ = {
 
 class Spotify extends Integration {
   client: any = null
-  uris: Array<string> = []
+  uris: Array<{
+    uri: string,
+    requestBy: string,
+    artist: string,
+    song: string,
+  }> = []
   currentUris: string | null = null
   originalUri: string | null = null
 
@@ -45,8 +52,11 @@ class Spotify extends Integration {
       },
       output: {
         format: '$song - $artist',
-        playlistToPlay: ''
+        playlistToPlay: '',
+        continueOnPlaylistAfterRequest: true,
       },
+      songRequests: true,
+      fetchCurrentSongWhenOffline: false,
       connection: {
         clientId: '',
         clientSecret: '',
@@ -112,13 +122,17 @@ class Spotify extends Integration {
 
     super({ settings, ui, on })
 
-    if (cluster.isMaster) {
+    this.addWidget('spotify', 'widget-title-spotify', 'fab fa-spotify');
+
+    if (isMainThread) {
       this.timeouts.IRefreshToken = setTimeout(() => this.IRefreshToken(), 60000)
       this.timeouts.ICurrentSong = setTimeout(() => this.ICurrentSong(), 10000)
       this.timeouts.getMe = setTimeout(() => this.getMe(), 10000)
       setInterval(() => this.sendSongs(), 500)
     }
   }
+
+
 
   onUsernameChange (key: string, value: string) {
     if (value.length > 0) global.log.info(chalk.yellow('SPOTIFY: ') + `Access to account ${value} granted`)
@@ -149,7 +163,7 @@ class Spotify extends Integration {
     }
 
     // if song is not part of currentUris => save context
-    if (typeof song.uri !== 'undefined' && this.currentUris !== song.uri && this.uris.length === 0) {
+    if (await typeof song.uri !== 'undefined' && this.currentUris !== song.uri && this.uris.length === 0) {
       this.originalUri = song.uri
     }
 
@@ -158,9 +172,11 @@ class Spotify extends Integration {
       return
     }
 
+    if (!(await global.cache.isOnline())) return // don't do anything on offline stream
+
     // if song is part of currentUris and is not playing (finished playing), continue from playlist if set
     if (typeof song.uri !== 'undefined' && this.currentUris === song.uri && !song.is_playing && this.uris.length === 0) {
-      if (this.settings.output.playlistToPlay.length > 0) {
+      if (this.settings.output.playlistToPlay.length > 0 && this.settings.output.continueOnPlaylistAfterRequest) {
         try {
           // play from playlist
           const offset = this.originalUri ? { uri: this.originalUri } : undefined
@@ -194,7 +210,7 @@ class Spotify extends Integration {
     } else if (this.uris.length > 0) { // or we have requests
       if (Date.now() - song.finished_at <= 0 || this.originalUri !== song.uri || this.originalUri === null || !song.is_playing) { // song should be finished
         try {
-          this.currentUris = this.uris.shift() // FIFO
+          this.currentUris = this.uris.shift().uri // FIFO
           await axios({
             method: 'put',
             url: 'https://api.spotify.com/v1/me/player/play',
@@ -242,7 +258,7 @@ class Spotify extends Integration {
     clearTimeout(this.timeouts['ICurrentSong'])
 
     try {
-      if (!(await global.cache.isOnline())) throw Error('Stream is offline')
+      if (!this.settings.fetchCurrentSongWhenOffline && !(await global.cache.isOnline())) throw Error('Stream is offline')
       let data = await this.client.getMyCurrentPlayingTrack()
 
       let currentSong = JSON.parse(this.settings._.currentSong)
@@ -408,11 +424,12 @@ class Spotify extends Integration {
 
   async main (opts: CommandOptions) {
     if (!(await global.cache.isOnline())) return // don't do anything on offline stream
-    if (!cluster.isMaster) {
+    if (!isMainThread) {
       // we have client connected on master -> send process to master
-      if (process.send) process.send({ type: 'call', ns: 'integrations.spotify', fnc: 'main', args: [opts] })
+      global.workers.sendToMaster({ type: 'call', ns: 'integrations.spotify', fnc: 'main', args: [opts] })
       return
     }
+    if (!this.settings.songRequests) return
 
     try {
       let [spotifyId] = new Expects(opts.parameters)
@@ -440,7 +457,12 @@ class Spotify extends Integration {
           global.commons.prepare('integrations.spotify.song-requested', {
             name: track.name, artist: track.artists[0].name
           }), opts.sender)
-        this.uris.push('spotify:track:' + id)
+        this.uris.push({
+          uri: 'spotify:track:' + id,
+          requestBy: opts.sender.username,
+          song: track.name,
+          artist: track.artists[0].name,
+        })
       } else {
         let response = await axios({
           method: 'get',
@@ -455,12 +477,16 @@ class Spotify extends Integration {
           global.commons.prepare('integrations.spotify.song-requested', {
             name: track.name, artist: track.artists[0].name
           }), opts.sender)
-        this.uris.push(track.uri)
+        this.uris.push({
+          uri: track.uri,
+          requestBy: opts.sender.username,
+          song: track.name,
+          artist: track.artists[0].name,
+        })
       }
     } catch (e) {
       global.commons.sendMessage(
         global.commons.prepare('integrations.spotify.song-not-found'), opts.sender)
-      global.log.error(e.stack)
     }
   }
 }

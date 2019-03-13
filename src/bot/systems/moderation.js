@@ -92,8 +92,8 @@ class Moderation extends System {
     this.socket.on('connection', (socket) => {
       socket.on('lists.get', async (cb) => {
         cb(null, {
-          blacklist: await this.settings.lists.blacklist,
-          whitelist: await this.settings.lists.whitelist
+          blacklist: this.settings.lists.blacklist,
+          whitelist: this.settings.lists.whitelist
         })
       })
       socket.on('lists.set', async (data) => {
@@ -176,7 +176,7 @@ class Moderation extends System {
       text = text.replace(ytRegex, '')
     }
 
-    const includeClips = await this.settings.links.includeClips
+    const includeClips = this.settings.links.includeClips
 
     if (!includeClips) {
       clipsRegex = /.*(clips.twitch.tv\/)(\w+)/
@@ -184,7 +184,7 @@ class Moderation extends System {
     }
 
     text = ` ${text} `
-    let whitelist = await this.settings.lists.whitelist
+    let whitelist = this.settings.lists.whitelist
 
     for (let value of whitelist.map(o => o.trim().replace(/\*/g, '[\\pL0-9\\S]*').replace(/\+/g, '[\\pL0-9\\S]+'))) {
       if (value.length > 0) {
@@ -223,11 +223,11 @@ class Moderation extends System {
       this.settings.links.includeSpaces,
       this.settings.links.timeout,
       global.commons.isOwner(opts.sender),
-      global.commons.isMod(opts.sender),
+      global.commons.isModerator(opts.sender),
       this.whitelist(opts.message)
     ])
 
-    if (isOwner || isMod || !isEnabled || (opts.sender.isSubscriber && !isEnabledForSubs)) {
+    if (isOwner || isMod || !isEnabled || (typeof opts.sender.badges.subscriber !== 'undefined' && !isEnabledForSubs)) {
       return true
     }
 
@@ -257,7 +257,7 @@ class Moderation extends System {
       this.settings.symbols.moderateSubscribers,
       this.whitelist(opts.message),
       global.commons.isOwner(opts.sender),
-      global.commons.isMod(opts.sender),
+      global.commons.isModerator(opts.sender),
       this.settings.symbols.timeout,
       this.settings.symbols.triggerLength,
       this.settings.symbols.maxSymbolsConsecutively,
@@ -267,7 +267,7 @@ class Moderation extends System {
     var msgLength = whitelisted.trim().length
     var symbolsLength = 0
 
-    if (isOwner || isMod || msgLength < triggerLength || !isEnabled || (opts.sender.isSubscriber && !isEnabledForSubs)) {
+    if (isOwner || isMod || msgLength < triggerLength || !isEnabled || (typeof opts.sender.badges.subscriber !== 'undefined' && !isEnabledForSubs)) {
       return true
     }
 
@@ -297,14 +297,14 @@ class Moderation extends System {
       this.settings.longMessage.enabled,
       this.settings.longMessage.moderateSubscribers,
       global.commons.isOwner(opts.sender),
-      global.commons.isMod(opts.sender),
+      global.commons.isModerator(opts.sender),
       this.whitelist(opts.message),
       this.settings.longMessage.timeout,
       this.settings.longMessage.triggerLength
     ])
 
     var msgLength = whitelisted.trim().length
-    if (isOwner || isMod || msgLength < triggerLength || !isEnabled || (opts.sender.isSubscriber && !isEnabledForSubs)) {
+    if (isOwner || isMod || msgLength < triggerLength || !isEnabled || (typeof opts.sender.badges.subscriber !== 'undefined' && !isEnabledForSubs)) {
       return true
     } else {
       this.timeoutUser(opts.sender, opts.message,
@@ -320,7 +320,7 @@ class Moderation extends System {
       this.settings.caps.enabled,
       this.settings.caps.moderateSubscribers,
       global.commons.isOwner(opts.sender),
-      global.commons.isMod(opts.sender),
+      global.commons.isModerator(opts.sender),
       this.whitelist(opts.message),
       this.settings.caps.timeout,
       this.settings.caps.triggerLength,
@@ -351,7 +351,7 @@ class Moderation extends System {
       }
     }
 
-    if (isOwner || isMod || msgLength < triggerLength || !isEnabled || (opts.sender.isSubscriber && !isEnabledForSubs)) {
+    if (isOwner || isMod || msgLength < triggerLength || !isEnabled || (typeof opts.sender.badges.subscriber !== 'undefined' && !isEnabledForSubs)) {
       return true
     }
     if (Math.ceil(capsLength / (msgLength / 100)) >= maxCapsPercent) {
@@ -369,7 +369,7 @@ class Moderation extends System {
       this.settings.spam.enabled,
       this.settings.spam.moderateSubscribers,
       global.commons.isOwner(opts.sender),
-      global.commons.isMod(opts.sender),
+      global.commons.isModerator(opts.sender),
       this.whitelist(opts.message),
       this.settings.spam.timeout,
       this.settings.spam.triggerLength,
@@ -378,7 +378,7 @@ class Moderation extends System {
 
     var msgLength = whitelisted.trim().length
 
-    if (isOwner || isMod || msgLength < triggerLength || !isEnabled || (opts.sender.isSubscriber && !isEnabledForSubs)) {
+    if (isOwner || isMod || msgLength < triggerLength || !isEnabled || (typeof opts.sender.badges.subscriber !== 'undefined' && !isEnabledForSubs)) {
       return true
     }
     var out = whitelisted.match(/(.+)(\1+)/g)
@@ -399,11 +399,11 @@ class Moderation extends System {
       this.settings.color.enabled,
       this.settings.color.moderateSubscribers,
       global.commons.isOwner(opts.sender),
-      global.commons.isMod(opts.sender),
+      global.commons.isModerator(opts.sender),
       this.settings.color.timeout
     ])
 
-    if (isOwner || isMod || !isEnabled || (opts.sender.isSubscriber && !isEnabledForSubs)) {
+    if (isOwner || isMod || !isEnabled || (typeof opts.sender.badges.subscriber !== 'undefined' && !isEnabledForSubs)) {
       return true
     }
 
@@ -422,13 +422,13 @@ class Moderation extends System {
       this.settings.emotes.enabled,
       this.settings.emotes.moderateSubscribers,
       global.commons.isOwner(opts.sender),
-      global.commons.isMod(opts.sender),
+      global.commons.isModerator(opts.sender),
       this.settings.emotes.timeout,
       this.settings.emotes.maxCount
     ])
 
     var count = opts.sender.emotes.length
-    if (isOwner || isMod || !isEnabled || (opts.sender.isSubscriber && !isEnabledForSubs)) {
+    if (isOwner || isMod || !isEnabled || (typeof opts.sender.badges.subscriber !== 'undefined' && !isEnabledForSubs)) {
       return true
     }
 
@@ -445,11 +445,11 @@ class Moderation extends System {
     let [isEnabledForSubs, isOwner, isMod, timeout, blacklist] = await Promise.all([
       this.settings.lists.moderateSubscribers,
       global.commons.isOwner(opts.sender),
-      global.commons.isMod(opts.sender),
+      global.commons.isModerator(opts.sender),
       this.settings.lists.timeout,
       this.settings.lists.blacklist
     ])
-    if (isOwner || isMod || (opts.sender.isSubscriber && !isEnabledForSubs)) {
+    if (isOwner || isMod || (typeof opts.sender.badges.subscriber !== 'undefined' && !isEnabledForSubs)) {
       return true
     }
 
